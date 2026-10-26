@@ -1,0 +1,13 @@
+[Unit]
+Description=ClipForge review UI + API
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=%h/CLipping
+ExecStart=%h/CLipping/.venv/bin/clipforge serve
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
