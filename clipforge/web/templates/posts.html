@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Views · ClipForge{% endblock %}
+{% block content %}
+<h1>Post views</h1>
+<p class="small muted">Enter the view count shown on the post or the campaign dashboard. Each entry is a snapshot, so you can track growth over time.</p>
+{% for p in posts %}
+<div class="card">
+  <div class="row"><span class="chip">{{ p.platform }}</span><span class="chip">{{ p.campaign }}</span>
+    <span class="small muted">posted {{ p.posted_at[:10] }}</span></div>
+  <div><b>{{ p.hook_text }}</b> · <a href="{{ p.url }}" target="_blank" rel="noopener">open</a></div>
+  <div class="row small">
+    <span class="score">{{ p.views|num }} views</span>
+    {% if p.min_views %}<span class="muted">threshold {{ p.min_views|num }}</span>
+      {% if (p.views or 0) >= p.min_views %}<span class="chip">qualifies</span>{% endif %}{% endif %}
+    {% if p.checked %}<span class="muted">checked {{ p.checked[:16].replace('T',' ') }}</span>{% endif %}
+  </div>
+  <form method="post" action="/posts/{{ p.id }}/views" class="row">
+    <input name="views" type="number" min="0" inputmode="numeric" placeholder="Views" required style="flex:1">
+    <input name="likes" type="number" min="0" inputmode="numeric" placeholder="Likes" style="flex:1">
+    <button class="go">Save</button>
+  </form>
+</div>
+{% else %}
+<div class="card empty">No posts logged yet.</div>
+{% endfor %}
+{% endblock %}

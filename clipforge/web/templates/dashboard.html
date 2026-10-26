@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · ClipForge{% endblock %}
+{% macro table(rows, label='Name') %}
+<div class="card scroll"><table>
+  <tr><th>{{ label }}</th><th class="n">Clips</th><th class="n">Approval</th><th class="n">Posts</th><th class="n">Views</th><th class="n">Views/post</th><th class="n">Est. $</th></tr>
+  {% for r in rows %}
+  <tr><td>{{ r.label or r.name or '—' }}</td><td class="n">{{ r.clips }}</td><td class="n">{{ r.approval_rate|pct }}</td>
+    <td class="n">{{ r.posts }}</td><td class="n">{{ r.views|num }}</td>
+    <td class="n">{{ (r.views_per_post or 0)|round|int|num }}</td><td class="n">{{ r.earn|money }}</td></tr>
+  {% else %}<tr><td colspan="7" class="muted">No data yet.</td></tr>{% endfor %}
+</table></div>
+{% endmacro %}
+{% block content %}
+<h1>Dashboard</h1>
+{% set t = d.totals %}
+<div class="stats">
+  <div class="stat"><span class="small muted">Est. earnings</span><b>{{ t.earn|money }}</b></div>
+  <div class="stat"><span class="small muted">Total views</span><b>{{ t.views|num }}</b></div>
+  <div class="stat"><span class="small muted">Posts</span><b>{{ t.posts }}</b></div>
+  <div class="stat"><span class="small muted">Approval rate</span><b>{{ t.approval_rate|pct }}</b></div>
+  <div class="stat"><span class="small muted">In review</span><b>{{ t.in_review }}</b></div>
+</div>
+
+<div class="card">
+  <div class="row"><b>API spend</b><span class="chip">{{ budget.state }}</span></div>
+  <div class="row small"><span>Today {{ budget.today|money }}</span><span>Month {{ budget.month|money }} of {{ budget.cap|money }}</span></div>
+  <div class="bar {{ budget.state }}"><i style="width: {{ [budget.ratio * 100, 100]|min }}%"></i></div>
+  {% if d.spend %}
+  <table class="small">
+    <tr><th>Stage</th><th>Provider</th><th class="n">Calls</th><th class="n">Billed</th><th class="n">API-equivalent</th></tr>
+    {% for r in d.spend %}<tr><td>{{ r.stage }}</td><td>{{ r.provider }}</td><td class="n">{{ r.calls }}</td><td class="n">{{ "$%.4f"|format(r.usd) }}</td><td class="n">{{ "$%.4f"|format(r.eq) }}</td></tr>{% endfor %}
+  </table>
+  {% endif %}
+</div>
+
+<h2>Campaigns: progress to payout threshold</h2>
+<div class="card scroll"><table>
+  <tr><th>Campaign</th><th class="n">$/1K</th><th class="n">Posts</th><th class="n">Views</th><th>Best clip vs threshold</th><th class="n">Est. $</th></tr>
+  {% for r in d.by_campaign %}
+  <tr><td>{{ r.label }}</td><td class="n">{{ "%.2f"|format(r.per_1k) }}</td><td class="n">{{ r.posts }}</td><td class="n">{{ r.views|num }}</td>
+    <td>{% if r.threshold_progress is not none %}<div class="bar"><i style="width: {{ r.threshold_progress * 100 }}%"></i></div>
+      <span class="small muted">{{ r.best_views|num }} / {{ r.min_views|num }}</span>{% else %}<span class="small muted">no threshold</span>{% endif %}</td>
+    <td class="n">{{ r.earn|money }}</td></tr>
+  {% else %}<tr><td colspan="6" class="muted">No campaigns with clips yet.</td></tr>{% endfor %}
+</table></div>
+
+<h2>By hook type</h2>{{ table(d.by_hook, 'Hook type') }}
+<h2>By prompt version (A/B)</h2>{{ table(d.by_prompt, 'Prompt') }}
+<h2>By platform</h2>{{ table(d.by_platform, 'Platform') }}
+
+<h2>System</h2>
+<div class="card small">
+  <div>Disk free: {{ health.disk_free_gb }} GB · raw media: {{ health.raw_media_gb }} GB</div>
+  <div>Laptop worker: {{ 'online' if health.remote_worker_online else 'offline' }}</div>
+  <div class="scroll"><table>
+    <tr><th>Stage</th><th class="n">Queued</th><th class="n">Running</th><th class="n">Done</th><th class="n">Dead</th></tr>
+    {% for k, v in jobs.items() %}<tr><td>{{ k }}</td><td class="n">{{ v.queued or 0 }}</td><td class="n">{{ v.running or 0 }}</td><td class="n">{{ v.done or 0 }}</td><td class="n">{{ v.dead or 0 }}</td></tr>{% endfor %}
+  </table></div>
+</div>
+{% endblock %}

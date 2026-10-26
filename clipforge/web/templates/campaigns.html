@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Campaigns · ClipForge{% endblock %}
+{% block content %}
+<h1>Campaigns</h1>
+{% for c in campaigns %}
+<div class="card">
+  <div class="row"><b>#{{ c.id }} {{ c.name }}</b><span class="chip">{{ c.status }}</span>
+    {% if c.category %}<span class="chip">{{ c.category }}</span>{% endif %}</div>
+  <div class="row small">
+    <span class="score">${{ "%.2f"|format(c.per_1k) }} / 1K views</span>
+    {% if c.min_views %}<span>min {{ c.min_views|num }} views</span>{% endif %}
+    {% if c.cap_usd %}<span>cap {{ c.cap_usd|money }} / clip</span>{% endif %}
+    <span class="muted">{{ c.platform }} · {{ c.allowed_platforms }}</span>
+  </div>
+  {% if c.required_tags %}<div class="small">Tags: {{ c.required_tags }}</div>{% endif %}
+  {% if c.notes %}<div class="small muted">{{ c.notes }}</div>{% endif %}
+  <form method="post" action="/campaigns/{{ c.id }}/status" class="row">
+    {% for st in ['active','paused','ended'] if st != c.status %}
+    <button class="small" name="status" value="{{ st }}">Mark {{ st }}</button>
+    {% endfor %}
+  </form>
+</div>
+{% endfor %}
+
+<details class="card" {{ 'open' if not campaigns }}>
+<summary>Add campaign</summary>
+<form method="post" action="/campaigns" class="grid2">
+  <label>Name <input name="name" required placeholder="e.g. Big Podcast Clips"></label>
+  <label>Category
+    <select name="category"><option>podcast</option><option>interview</option><option>gaming</option><option>other</option></select>
+  </label>
+  <label>Marketplace <input name="platform" value="clipping.net"></label>
+  <label>Pay ($) <input name="rate_usd" type="number" step="0.01" min="0" required placeholder="40"></label>
+  <label>…per
+    <select name="rate_mode"><option value="1000">1K views</option><option value="100000">100K views</option><option value="1000000">1M views</option></select>
+  </label>
+  <label>Min views to qualify <input name="min_views" type="number" min="0" placeholder="10000"></label>
+  <label>Cap per clip ($) <input name="cap_usd" type="number" step="0.01" min="0"></label>
+  <label>Allowed platforms <input name="allowed_platforms" value="tiktok,youtube"></label>
+  <label>Required tags / mentions <input name="required_tags" placeholder="@creator #campaigntag"></label>
+  <label>Required caption text <input name="caption_notes"></label>
+  <label>Disclosure <input name="disclosure" value="#ad"></label>
+  <label>End date <input name="end_date" type="date"></label>
+  <label>Source links (Drive / channel) <input name="source_links"></label>
+  <label>YouTube RSS feeds to watch <input name="watch_feeds" placeholder="https://www.youtube.com/feeds/videos.xml?channel_id=…"></label>
+  <label>Notes <input name="notes"></label>
+  <label class="row" style="grid-template-columns:auto 1fr"><input type="checkbox" name="force" style="width:auto"> Override blocklist</label>
+  <button class="go">Add campaign</button>
+</form>
+</details>
+{% endblock %}

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{% block title %}ClipForge{% endblock %}</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<nav>
+  <a href="/review" class="{{ 'on' if active == 'review' }}">Review</a>
+  <a href="/approved" class="{{ 'on' if active == 'approved' }}">Post</a>
+  <a href="/posts" class="{{ 'on' if active == 'posts' }}">Views</a>
+  <a href="/sources" class="{{ 'on' if active == 'sources' }}">Sources</a>
+  <a href="/campaigns" class="{{ 'on' if active == 'campaigns' }}">Campaigns</a>
+  <a href="/dashboard" class="{{ 'on' if active == 'dashboard' }}">Dashboard</a>
+</nav>
+<main>
+  {% if msg %}<div class="msg" role="status">{{ msg }}</div>{% endif %}
+  {% block content %}{% endblock %}
+</main>
+<script>
+// Copy that also works over plain http (navigator.clipboard needs https).
+function copyText(id, btn) {
+  const el = document.getElementById(id);
+  const done = () => { const t = btn.textContent; btn.textContent = "Copied ✓"; setTimeout(() => btn.textContent = t, 1500); };
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(el.value).then(done, () => { el.select(); document.execCommand("copy"); done(); });
+  } else { el.focus(); el.select(); document.execCommand("copy"); done(); }
+}
+</script>
+</body>
+</html>

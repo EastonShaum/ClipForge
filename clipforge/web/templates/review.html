@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Review ({{ clips|length }}) · ClipForge{% endblock %}
+{% block content %}
+<h1>Review <span class="muted">{{ clips|length }} waiting</span></h1>
+{% for c in clips %}
+<article class="card" id="clip{{ c.id }}">
+  <div class="row">
+    <span class="score">{{ "%.0f"|format(c.score) }}</span>
+    <span class="chip">{{ c.hook_type.replace('_',' ') }}</span>
+    <span class="chip">{{ (c.end_ms - c.start_ms)|secs }}</span>
+    <span class="chip">{{ c.campaign }}</span>
+  </div>
+  <div class="hook">{{ c.hook_text }}</div>
+  <video src="/media/clips/{{ c.path }}" controls playsinline preload="metadata"></video>
+  <div class="small muted">{{ c.rationale }}</div>
+  <div class="small muted">From <a href="{{ c.src_url }}" target="_blank" rel="noopener">{{ c.src_title or c.src_url }}</a>
+    at {{ c.start_ms|mmss }} · {{ c.prompt or "no prompt" }}</div>
+  <form method="post" action="/clips/{{ c.id }}/review" class="row">
+    <input type="hidden" name="decision" value="approved">
+    <button class="go big">Approve</button>
+  </form>
+  <details>
+    <summary>Reject…</summary>
+    <form method="post" action="/clips/{{ c.id }}/review" class="row" style="margin-top:8px">
+      <input type="hidden" name="decision" value="rejected">
+      <div class="row">
+      {% for key, label in reasons.items() %}
+        <button class="no small" name="reason" value="{{ key }}">{{ label }}</button>
+      {% endfor %}
+      </div>
+      <input name="note" placeholder="Optional note (helps the AI learn)">
+    </form>
+  </details>
+</article>
+{% else %}
+<div class="card empty">Nothing to review. Add a source on the <a href="/sources">Sources</a> page; you'll get a Discord ping when clips are ready.</div>
+{% endfor %}
+{% endblock %}
