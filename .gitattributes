@@ -1,0 +1,4 @@
+scripts/laptop/*.bat text eol=crlf
+scripts/laptop/*.ps1 text eol=crlf
+*.mp4 binary
+*.ttf binary
