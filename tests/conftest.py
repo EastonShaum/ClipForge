@@ -16,6 +16,7 @@ def settings(tmp_path, monkeypatch):
     monkeypatch.setenv("CF_MAX_CLIP_S", "15")
     monkeypatch.setenv("CF_CANDIDATES_KEEP", "2")
     monkeypatch.setenv("CF_RENDER_PRESET", "ultrafast")
+    monkeypatch.setenv("CF_REQUIRE_WORKER_VERSION", "false")  # test_update.py turns it on
     config.get_settings.cache_clear()
     s = config.get_settings()
     yield s

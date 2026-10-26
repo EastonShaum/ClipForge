@@ -68,6 +68,9 @@ class Settings(BaseSettings):
     # Notifications
     discord_webhook_url: str = ""
 
+    # Remote workers must run the exact commit the Pi runs (they self-update; see update.py).
+    require_worker_version: bool = True
+
     # Policy
     blocked_categories: list[str] = Field(
         default_factory=lambda: ["gambling", "casino", "sports betting", "sportsbook"]

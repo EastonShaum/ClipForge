@@ -10,6 +10,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from clipforge.config import get_settings
+from clipforge.tools import ffmpeg
 
 
 class CampaignIn(BaseModel):
@@ -98,7 +99,7 @@ def set_logo(conn: sqlite3.Connection, campaign_id: int, data: bytes) -> str:
         src = Path(tmp) / "upload"
         src.write_bytes(data)
         part = Path(tmp) / "logo.png"
-        r = subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(src), "-frames:v", "1",
+        r = subprocess.run([ffmpeg(), "-y", "-v", "error", "-i", str(src), "-frames:v", "1",
                             "-vf", f"scale='min({LOGO_STORE_W},iw)':-1,format=rgba", str(part)],
                            capture_output=True, text=True)
         if r.returncode:

@@ -10,15 +10,17 @@ import logging
 import os
 import signal
 import socket
+import sys
 import tempfile
 import time
 from pathlib import Path
 
 import httpx
 
-from clipforge import jobqueue, pipeline
+from clipforge import jobqueue, pipeline, tools
 from clipforge.config import get_settings
 from clipforge.db import session
+from clipforge.update import UPDATE_EXIT_CODE, local_version
 
 log = logging.getLogger(__name__)
 ALL_KINDS = ["fetch", "transcribe", "select", "render"]
@@ -60,6 +62,10 @@ def run_local(kinds: list[str], label: str = "main", once: bool = False, idle_s:
             time.sleep(idle_s)
 
 
+class Outdated(Exception):
+    """The Pi runs different code than this worker; exit so the start script can update."""
+
+
 class RemoteClient:
     def __init__(self, base_url: str, token: str):
         self.http = httpx.Client(base_url=base_url.rstrip("/"), timeout=120,
@@ -68,9 +74,12 @@ class RemoteClient:
     def claim(self, name: str, host: str, kinds: list[str]) -> dict | None:
         r = self.http.post("/api/worker/claim", json={"worker": name, "host": host,
                                                       "kinds": kinds,
-                                                      "protocol": WORKER_PROTOCOL})
+                                                      "protocol": WORKER_PROTOCOL,
+                                                      "version": local_version()})
         if r.status_code == 204:
             return None
+        if r.status_code == 426:
+            raise Outdated(r.text)
         r.raise_for_status()
         return r.json()
 
@@ -111,11 +120,19 @@ def run_remote(base_url: str, kinds: list[str], idle_s: float = 10.0):
     signal.signal(signal.SIGINT, _handle_stop)
     host = s.host_name if s.host_name != "pi" else socket.gethostname().lower()
     name = worker_name(host, "remote")
+    try:  # fail fast with a clear message instead of failing every job
+        log.info("ffmpeg: %s, ffprobe: %s", tools.ffmpeg(), tools.ffprobe())
+    except tools.ToolMissing as e:
+        log.error("%s", e)
+        sys.exit(2)
     client = RemoteClient(base_url, s.worker_token)
     log.info("remote worker %s -> %s for %s", name, base_url, kinds)
     while not _stop:
         try:
             claimed = client.claim(name, host, kinds)
+        except Outdated:
+            log.warning("the Pi has newer code; exiting so the start script can update")
+            sys.exit(UPDATE_EXIT_CODE)
         except httpx.HTTPError as e:
             log.warning("Pi unreachable (%s); retrying in 30 s", e)
             time.sleep(30)

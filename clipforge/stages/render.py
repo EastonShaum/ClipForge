@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 from clipforge.config import Settings
+from clipforge.tools import ffmpeg
 
 W, H = 1080, 1920
 CAPTION_MARGIN_V = 640  # bottom-anchored: baseline ~1280 px, above TikTok's caption block
@@ -133,7 +134,7 @@ def render(s: Settings, *, media_path: str, words: list[dict], start_ms: int, en
                              s.caption_words_per_chunk, disclosure), encoding="utf-8")
     tmp = out_path.with_suffix(".part.mp4")
     cmd = [
-        "ffmpeg", "-y", "-v", "error",
+        ffmpeg(), "-y", "-v", "error",
         "-ss", f"{start_ms / 1000:.3f}", "-t", f"{(end_ms - start_ms) / 1000:.3f}",
         "-i", media_path,
         *(["-i", logo_path] if logo_path else []),

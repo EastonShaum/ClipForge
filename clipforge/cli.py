@@ -163,6 +163,15 @@ def remote_worker(
     run_remote(pi_url, [k.strip() for k in kinds.split(",") if k.strip()])
 
 
+@app.command("self-update")
+def self_update(pi_url: Annotated[str, typer.Option(help="e.g. http://raspberrypi:8420")]):
+    """Laptop: install the Pi's current code if it differs. Keeps .env and data/."""
+    from clipforge.update import self_update as do_update
+
+    _setup_logging()
+    do_update(pi_url, get_settings().worker_token)
+
+
 @app.command()
 def scheduler():
     """Run periodic tasks: feed polling, raw-media cleanup, budget alerts."""
@@ -191,6 +200,7 @@ def bench(
     """Benchmark rendering a captioned 1080x1920 clip from a synthetic 1080p source."""
     from clipforge.stages.render import render
     from clipforge.stages.transcribe import fake_transcript
+    from clipforge.tools import ffmpeg
 
     s = get_settings()
     if preset:
@@ -200,7 +210,7 @@ def bench(
         src = tmpd / "src.mp4"
         typer.echo("making a synthetic 1080p30 source…")
         subprocess.run(
-            ["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i",
+            [ffmpeg(), "-y", "-v", "error", "-f", "lavfi", "-i",
              f"testsrc2=size=1920x1080:rate=30:duration={seconds + 2}",
              "-f", "lavfi", "-i", f"sine=frequency=330:duration={seconds + 2}",
              "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-shortest", str(src)],

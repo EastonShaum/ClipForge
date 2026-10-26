@@ -121,3 +121,14 @@ A webhook is a URL you create in channel settings. It can only post into that on
 - **Pinning:** the fetch job is pinned to the machine that has the file. A Windows path means the most recently seen laptop worker; a POSIX path means the Pi; `--on HOST` (CLI) or the Sources form overrides. Transcribe and render follow automatically through media affinity (D5).
 - **Worker protocol:** remote workers send `protocol: 2`. The Pi answers older workers with HTTP 426 and doesn't count them as online. Otherwise an outdated laptop would render Man On clips without the logo.
 - **4K:** no 1080p proxy. The laptop decodes 4K fast enough, and the renderer scales down anyway. If the Pi ever has to render 4K, it's slow but correct.
+
+## D21. The laptop updates itself from the Pi
+- **Why:** two copies of the code drift. A stale laptop rendered nothing useful once already, and could render clips without a required logo.
+- **How:**
+  - The Pi records the git commit it loaded.
+  - Over the token-protected worker API it serves that commit (`/api/worker/code/version`, and `/api/worker/code` as a `git archive` zip).
+  - `start-worker.bat` runs `clipforge self-update` before every start. That replaces code files but never `.env`, `data/` or `.venv`.
+  - The Pi answers a worker on a different commit with 426. The worker exits with code 3, and the script loops back to update and restart.
+- **Deploy rule:** commit, then `systemctl --user restart 'clipforge-*'`. Uncommitted edits on the Pi aren't served to the laptop.
+- **Also:** the worker locates ffmpeg/ffprobe itself (`tools.py`). winget's PATH change doesn't reach windows opened before you sign out and back in. The worker refuses to start if they're missing, instead of failing every job.
+- **Rejected:** GitHub plus `git pull` (needs an account and a push step, and the code leaves your tailnet); syncing folders with Syncthing (it would also sync half-written files, and nothing would check versions).

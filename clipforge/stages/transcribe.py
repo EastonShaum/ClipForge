@@ -12,6 +12,7 @@ from pathlib import Path
 import httpx
 
 from clipforge.config import Settings
+from clipforge.tools import ffmpeg, ffprobe
 
 CHUNK_S = 600  # 10-minute chunks keep each upload far below API size limits
 OVERLAP_S = 2.0
@@ -19,7 +20,7 @@ OVERLAP_S = 2.0
 
 def probe_duration(path: Path) -> float:
     out = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", str(path)],
+        [ffprobe(), "-v", "error", "-show_entries", "format=duration", "-of", "json", str(path)],
         check=True, capture_output=True, text=True,
     ).stdout
     return float(json.loads(out)["format"]["duration"])
@@ -27,7 +28,7 @@ def probe_duration(path: Path) -> float:
 
 def extract_audio(media: Path, out: Path, start: float = 0.0, length: float | None = None) -> Path:
     """16 kHz mono 32 kbps Opus: ~14 MB per hour, plenty for speech recognition."""
-    cmd = ["ffmpeg", "-y", "-v", "error", "-ss", f"{start:.3f}", "-i", str(media)]
+    cmd = [ffmpeg(), "-y", "-v", "error", "-ss", f"{start:.3f}", "-i", str(media)]
     if length:
         cmd += ["-t", f"{length:.3f}"]
     cmd += ["-vn", "-ac", "1", "-ar", "16000", "-c:a", "libopus", "-b:a", "32k", str(out)]

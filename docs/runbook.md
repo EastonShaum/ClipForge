@@ -70,7 +70,7 @@ Worker token: generate with `openssl rand -hex 24`. It must match on the Pi and 
 
 The Pi dashboard shows "Laptop worker: online".
 
-**Updating the laptop:** after the code changes, the Pi refuses old laptop workers. The worker window then logs `426 Upgrade Required` every 30 s. Stop the worker, unzip the new `clipforge-laptop.zip` over the old folder (it never contains `.env`, so yours is kept), run `uv sync` in the folder, then start the worker again. New downloads now land on the laptop, and renders for those sources run there. To start it at login, put a shortcut to the `.bat` in `shell:startup`.
+**Updating the laptop:** automatic. `start-worker.bat` fetches the Pi's current code before it starts. If the Pi gets newer code while the worker runs, the worker exits and the script updates and restarts it. On the Pi, a change only counts once it's **committed and the services are restarted**. The laptop's `.env` and `data\` are never touched. If an update fails (e.g. the Pi is unreachable), the worker starts with the code it has, and the Pi turns it away until it matches.
 
 ## A/B prompt versions
 - Prompts are the files `clipforge/prompts/select-*.md`. Editing a file creates a new version on the next service restart.

@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from clipforge.config import Settings
+from clipforge.tools import ffprobe
 
 
 class DiskFull(RuntimeError):
@@ -49,7 +50,7 @@ def is_windows_path(path: str) -> bool:
 
 
 def probe(path: str) -> dict:
-    r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+    r = subprocess.run([ffprobe(), "-v", "error", "-show_entries", "format=duration",
                         "-of", "json", path], capture_output=True, text=True, check=True)
     return {"duration_s": float(json.loads(r.stdout)["format"].get("duration") or 0)}
 

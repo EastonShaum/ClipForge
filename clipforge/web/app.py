@@ -24,6 +24,7 @@ from clipforge.feedback import REJECT_REASONS
 from clipforge.ingest import add_source, remote_hosts
 from clipforge.select_prompts import sync_prompts
 from clipforge.stages.fetch import dir_size_gb, free_gb
+from clipforge.update import code_zip, repo_version
 from clipforge.worker import WORKER_PROTOCOL
 
 log = logging.getLogger(__name__)
@@ -92,6 +93,8 @@ def _clip_rows(conn, status: str, limit: int = 50) -> list[dict]:
 
 def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads best
     s = get_settings()
+    # The commit this process loaded. Remote workers must run exactly this (see update.py).
+    code_version = repo_version() if s.require_worker_version else None
 
     @app.get("/health")
     def health(conn: DB):
@@ -271,13 +274,14 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         host: str
         kinds: list[str]
         protocol: int = 1
+        version: str = ""
 
     @app.post("/api/worker/claim", dependencies=[Worker])
     def api_claim(body: ClaimIn, conn: DB):
-        if body.protocol < WORKER_PROTOCOL:
+        if body.protocol < WORKER_PROTOCOL or (code_version and body.version != code_version):
             # No heartbeat either: an outdated laptop must not count as online.
-            raise HTTPException(426, "laptop worker is outdated: install the latest ClipForge "
-                                     "zip on it, keep its .env, and restart it")
+            raise HTTPException(426, "laptop worker is outdated: restart it with "
+                                     "start-worker.bat, which updates it from the Pi")
         jobqueue.heartbeat(conn, body.worker, body.kinds)
         kinds = [k for k in body.kinds if k != "select"]  # selection always runs on the Pi
         for _ in range(5):
@@ -320,6 +324,19 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
             data["size_bytes"] = dest.stat().st_size
         pipeline.apply_result(conn, s, job, data, host=host)
         return {"ok": True}
+
+    @app.get("/api/worker/code/version", dependencies=[Worker])
+    def api_code_version():
+        if not code_version:
+            raise HTTPException(404, "the Pi isn't running from a git checkout")
+        return {"version": code_version}
+
+    @app.get("/api/worker/code", dependencies=[Worker])
+    def api_code():
+        if not code_version:
+            raise HTTPException(404, "the Pi isn't running from a git checkout")
+        return Response(code_zip(code_version), media_type="application/zip",
+                        headers={"X-ClipForge-Version": code_version})
 
     @app.get("/api/worker/assets/{rel:path}", dependencies=[Worker])
     def api_asset(rel: str):

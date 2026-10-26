@@ -40,11 +40,11 @@ systemctl --user status 'clipforge-*'
 - **Commits:** conventional (`feat:`, `fix:`, `docs:`, `chore:`), small.
 
 ## Current status (2026-10-26)
-- Phases 0–7 are built, plus campaign logos (D19) and in-place local footage pinned to the right machine (D20). 49 tests pass.
+- Phases 0–7 are built, plus campaign logos (D19), in-place local footage pinned to the right machine (D20) and laptop self-update (D21). 54 tests pass.
 - Render benchmark on the Pi: 45 s clip in 54 s (blurfill), so the Pi renders by default (D6).
 - The services run on the Pi, and the UI is bound to the Tailscale IP 100.x.y.z:8420. The laptop worker (`eastons-laptop`) is set up.
 - Keys, webhook and the @ggcutroom handle are done. Live campaigns are evaluated in research/campaigns-2026-10-26.md.
-- **Remote worker protocol** (`worker.WORKER_PROTOCOL`): bump it when a job context gains something a remote worker must understand. Ship a new laptop zip with `git archive --format=zip --prefix=CLipping/ -o ~/clipforge-laptop.zip HEAD`.
+- **Remote worker protocol** (`worker.WORKER_PROTOCOL`): bump it when a job context gains something a remote worker must understand. The laptop self-updates to the Pi's running commit (D21), so **deploy = commit + restart the services**. The manual zip is only for a first install: `git archive --format=zip --prefix=CLipping/ -o ~/clipforge-laptop.zip HEAD`.
 
 ## Next steps
 See PLAN.md "Next". Up now: the first real run, Man On ep-4 (4K file on the laptop, with logo, `#manon`). Then the GFuel mention-based flow, which needs one streamer tab of the mentions sheet from Easton.
