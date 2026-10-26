@@ -15,6 +15,12 @@ W, H = 1080, 1920
 CAPTION_MARGIN_V = 640  # bottom-anchored: baseline ~1280 px, above TikTok's caption block
 HOOK_MARGIN_V = 300  # top-anchored
 HOOK_SECONDS = 3.0
+# Brand logo: a "TV bug" in the top-right corner of the 16:9 picture (blurfill puts its top edge
+# at ~y=536). Below the hook box and the disclosure, left of TikTok's right-hand button column,
+# which starts lower down.
+LOGO_W = 210
+LOGO_X_MARGIN = 48
+LOGO_Y = 556
 
 
 def _ts(ms: int) -> str:
@@ -91,19 +97,26 @@ def build_ass(words: list[dict], clip_start_ms: int, clip_end_ms: int, hook: str
     return "\n".join(out) + "\n"
 
 
-def filter_graph(layout: str, ass_path: Path, fonts_dir: Path) -> str:
+def filter_graph(layout: str, ass_path: Path, fonts_dir: Path, logo: bool = False) -> str:
+    """Video filter graph. Input 0 is the source; input 1, when logo=True, is the logo PNG.
+    The logo goes under the subtitles so captions stay readable if they ever meet."""
     subs = f"ass={_filter_path(ass_path)}:fontsdir={_filter_path(fonts_dir)}"
     if layout == "crop":
-        return f"[0:v]scale=-2:{H},crop={W}:{H},setsar=1,{subs}[v]"
-    # blurfill: whole frame centered over a blurred, zoomed copy of itself. Safer than a blind
-    # center crop for two-person podcasts and gameplay where the action isn't centered.
-    return (
-        f"[0:v]split=2[a][b];"
-        f"[a]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,boxblur=10:2,"
-        f"scale={W}:{H},eq=brightness=-0.12[bg];"
-        f"[b]scale={W}:-2[fg];"
-        f"[bg][fg]overlay=(W-w)/2:(H-h)/2-120,setsar=1,{subs}[v]"
-    )
+        base = f"[0:v]scale=-2:{H},crop={W}:{H},setsar=1[base]"
+    else:
+        # blurfill: whole frame centered over a blurred, zoomed copy of itself. Safer than a
+        # blind center crop for two-person podcasts and gameplay where the action isn't centered.
+        base = (
+            f"[0:v]split=2[a][b];"
+            f"[a]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,boxblur=10:2,"
+            f"scale={W}:{H},eq=brightness=-0.12[bg];"
+            f"[b]scale={W}:-2[fg];"
+            f"[bg][fg]overlay=(W-w)/2:(H-h)/2-120,setsar=1[base]"
+        )
+    if not logo:
+        return f"{base};[base]{subs}[v]"
+    return (f"{base};[1:v]scale={LOGO_W}:-1,format=rgba[lg];"
+            f"[base][lg]overlay=W-w-{LOGO_X_MARGIN}:{LOGO_Y}:format=auto,{subs}[v]")
 
 
 def _filter_path(p: Path) -> str:
@@ -112,7 +125,7 @@ def _filter_path(p: Path) -> str:
 
 def render(s: Settings, *, media_path: str, words: list[dict], start_ms: int, end_ms: int,
            hook: str, out_path: Path, work: Path, layout: str | None = None,
-           disclosure: str = "") -> dict:
+           disclosure: str = "", logo_path: str | None = None) -> dict:
     work.mkdir(parents=True, exist_ok=True)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     ass = work / f"cap_{start_ms}_{end_ms}.ass"
@@ -123,7 +136,9 @@ def render(s: Settings, *, media_path: str, words: list[dict], start_ms: int, en
         "ffmpeg", "-y", "-v", "error",
         "-ss", f"{start_ms / 1000:.3f}", "-t", f"{(end_ms - start_ms) / 1000:.3f}",
         "-i", media_path,
-        "-filter_complex", filter_graph(layout or s.render_layout, ass, s.fonts_dir),
+        *(["-i", logo_path] if logo_path else []),
+        "-filter_complex", filter_graph(layout or s.render_layout, ass, s.fonts_dir,
+                                        logo=bool(logo_path)),
         "-map", "[v]", "-map", "0:a:0?",
         "-af", "loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000",
         "-c:v", "libx264", "-preset", s.render_preset, "-crf", str(s.render_crf),

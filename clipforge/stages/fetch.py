@@ -1,7 +1,11 @@
 """Fetch stage: download source media with yt-dlp, guarded by disk limits."""
 
+import json
+import re
 import shutil
+import subprocess
 from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 from clipforge.config import Settings
 
@@ -25,8 +29,44 @@ def check_disk(s: Settings, incoming_gb: float = 0.0) -> None:
         raise DiskFull(f"raw media cap {s.media_cap_gb} GB reached")
 
 
+WINDOWS_PATH = re.compile(r"^[A-Za-z]:[\\/]")
+
+
+def local_path(url: str) -> str | None:
+    """The filesystem path if this "URL" is really local footage (file:// URL, Windows path, or
+    absolute POSIX path), else None."""
+    url = url.strip().strip('"')
+    if url.startswith("file://"):
+        path = unquote(urlparse(url).path)
+        return path[1:] if re.match(r"^/[A-Za-z]:/", path) else path  # file:///C:/x -> C:/x
+    if WINDOWS_PATH.match(url) or url.startswith("/"):
+        return url
+    return None
+
+
+def is_windows_path(path: str) -> bool:
+    return bool(WINDOWS_PATH.match(path))
+
+
+def probe(path: str) -> dict:
+    r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                        "-of", "json", path], capture_output=True, text=True, check=True)
+    return {"duration_s": float(json.loads(r.stdout)["format"].get("duration") or 0)}
+
+
+def use_local(path: str) -> dict:
+    """Local footage is used where it sits: no copy, so a 5 GB 4K episode costs no extra disk,
+    and raw-media cleanup never touches it (cleanup only deletes raw_dir/<id>)."""
+    p = Path(path)
+    if not p.is_file():
+        raise FileNotFoundError(f"no file at {path} on this machine")
+    return {"media_path": str(p), "duration_s": probe(str(p))["duration_s"], "title": p.stem}
+
+
 def fetch(s: Settings, source_id: int, url: str) -> dict:
     """Download one source. Idempotent: an existing finished file is reused."""
+    if (path := local_path(url)) is not None:
+        return use_local(path)
     dest = s.raw_dir / str(source_id)
     dest.mkdir(parents=True, exist_ok=True)
     done = [p for p in dest.glob("media.*") if not p.name.endswith((".part", ".ytdl"))]
@@ -37,10 +77,7 @@ def fetch(s: Settings, source_id: int, url: str) -> dict:
 
     import yt_dlp  # heavy import, only when actually fetching
 
-    # file:// lets you queue footage you downloaded by hand (e.g. from a campaign Drive folder).
-    local = url.startswith("file://")
-    probe_opts = {"quiet": True, "no_warnings": True, "skip_download": True,
-                  "enable_file_urls": local}
+    probe_opts = {"quiet": True, "no_warnings": True, "skip_download": True}
     with yt_dlp.YoutubeDL(probe_opts) as ydl:
         info = ydl.extract_info(url, download=False)
     duration = float(info.get("duration") or 0)
@@ -52,13 +89,11 @@ def fetch(s: Settings, source_id: int, url: str) -> dict:
         "quiet": True,
         "no_warnings": True,
         "outtmpl": str(dest / "media.%(ext)s"),
-        "format": "b" if local else
-        f"bv*[height<={h}][vcodec^=avc1]+ba[ext=m4a]/bv*[height<={h}]+ba/b[height<={h}]/b",
+        "format": f"bv*[height<={h}][vcodec^=avc1]+ba[ext=m4a]/bv*[height<={h}]+ba/b[height<={h}]/b",
         "merge_output_format": "mp4",
         "retries": 5,
         "fragment_retries": 5,
         "noplaylist": True,
-        "enable_file_urls": local,
     }
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=True)

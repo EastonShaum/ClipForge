@@ -1,7 +1,11 @@
 """Campaign registry: add/list campaigns, compute effective pay, enforce the blocklist."""
 
+import hashlib
 import re
 import sqlite3
+import subprocess
+import tempfile
+from pathlib import Path
 
 from pydantic import BaseModel, Field
 
@@ -75,6 +79,37 @@ def get_campaign(conn: sqlite3.Connection, campaign_id: int) -> dict | None:
     d = dict(r)
     d["per_1k"] = effective_per_1k(r["rate_usd"], r["rate_per_views"])
     return d
+
+
+LOGO_STORE_W = 480  # stored size; render scales down further. Keeps transfers to the laptop small.
+
+
+def set_logo(conn: sqlite3.Connection, campaign_id: int, data: bytes) -> str:
+    """Store a campaign's required logo (any image ffmpeg reads) as a shrunk PNG with alpha.
+    The file name carries a content hash, so a replaced logo never hits a stale laptop cache."""
+    if not conn.execute("SELECT 1 FROM campaigns WHERE id=?", (campaign_id,)).fetchone():
+        raise ValueError(f"campaign {campaign_id} not found")
+    s = get_settings()
+    rel = f"logos/c{campaign_id}-{hashlib.sha256(data).hexdigest()[:10]}.png"
+    dest = s.assets_dir / rel
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    # Temp dir on the same filesystem as dest so the final rename is atomic.
+    with tempfile.TemporaryDirectory(dir=s.work_dir) as tmp:
+        src = Path(tmp) / "upload"
+        src.write_bytes(data)
+        part = Path(tmp) / "logo.png"
+        r = subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(src), "-frames:v", "1",
+                            "-vf", f"scale='min({LOGO_STORE_W},iw)':-1,format=rgba", str(part)],
+                           capture_output=True, text=True)
+        if r.returncode:
+            raise ValueError(f"not a readable image: {r.stderr.strip()[:200]}")
+        part.replace(dest)
+    conn.execute("UPDATE campaigns SET logo_path=? WHERE id=?", (rel, campaign_id))
+    return rel
+
+
+def clear_logo(conn: sqlite3.Connection, campaign_id: int) -> None:
+    conn.execute("UPDATE campaigns SET logo_path=NULL WHERE id=?", (campaign_id,))
 
 
 def estimate_payout(campaign: dict, views: int) -> float:

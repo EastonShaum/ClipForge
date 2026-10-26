@@ -7,8 +7,14 @@
   <label>Campaign
     <select name="campaign_id">{% for c in campaigns %}<option value="{{ c.id }}">#{{ c.id }} {{ c.name }}</option>{% endfor %}</select>
   </label>
-  <label>Footage links (one per line). Only footage the campaign supplies or permits.
-    <textarea name="urls" required placeholder="https://www.youtube.com/watch?v=…"></textarea>
+  <label>Footage, one per line: links, or full paths of files already downloaded. Only footage the campaign supplies or permits.
+    <textarea name="urls" required placeholder="https://www.youtube.com/watch?v=…&#10;C:\Users\Easton\Clipping\Campaigns\…\episode.mp4"></textarea>
+  </label>
+  <label>Downloaded files are on
+    <select name="host">
+      <option value="">Auto (C:\… = laptop, /home/… = Pi)</option>
+      {% for h in hosts %}<option value="{{ h }}">{{ h }}</option>{% endfor %}
+    </select>
   </label>
   <button class="go">Queue for clipping</button>
 </form>
@@ -22,7 +28,7 @@
   {% for s in sources %}
   <tr>
     <td>{{ s.id }}</td>
-    <td><a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.title or s.url }}</a>
+    <td>{% if s.url.startswith('http') %}<a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.title or s.url }}</a>{% else %}{{ s.title or s.url }}{% endif %}
       <div class="small muted">{{ s.campaign }}{% if s.media_host %} · media on {{ s.media_host }}{% endif %}</div>
       {% if s.last_error and s.status != 'rendered' %}<div class="small status-failed">{{ s.last_error[:160] }}</div>{% endif %}</td>
     <td class="status-{{ s.status }}">{{ s.status }}</td>

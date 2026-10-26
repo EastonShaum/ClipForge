@@ -40,10 +40,11 @@ systemctl --user status 'clipforge-*'
 - **Commits:** conventional (`feat:`, `fix:`, `docs:`, `chore:`), small.
 
 ## Current status (2026-10-26)
-- Phases 0–7 are built. 34 tests pass, including an end-to-end run.
+- Phases 0–7 are built, plus campaign logos (D19) and in-place local footage pinned to the right machine (D20). 49 tests pass.
 - Render benchmark on the Pi: 45 s clip in 54 s (blurfill), so the Pi renders by default (D6).
-- The 4 systemd user services are installed and running. The web UI is bound to 127.0.0.1 until Tailscale is logged back in.
-- Waiting on Easton: Tailscale login, Anthropic + Groq keys, Discord webhook, social handles, real campaigns (see BLOCKERS.md).
+- The services run on the Pi, and the UI is bound to the Tailscale IP 100.x.y.z:8420. The laptop worker (`eastons-laptop`) is set up.
+- Keys, webhook and the @ggcutroom handle are done. Live campaigns are evaluated in research/campaigns-2026-10-26.md.
+- **Remote worker protocol** (`worker.WORKER_PROTOCOL`): bump it when a job context gains something a remote worker must understand. Ship a new laptop zip with `git archive --format=zip --prefix=CLipping/ -o ~/clipforge-laptop.zip HEAD`.
 
 ## Next steps
-See PLAN.md "Next". The first job once keys exist is a real run on one real source, then tuning `select-v2.md` from Easton's rejections.
+See PLAN.md "Next". Up now: the first real run, Man On ep-4 (4K file on the laptop, with logo, `#manon`). Then the GFuel mention-based flow, which needs one streamer tab of the mentions sheet from Easton.

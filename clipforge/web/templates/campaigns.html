@@ -14,6 +14,19 @@
   </div>
   {% if c.required_tags %}<div class="small">Tags: {{ c.required_tags }}</div>{% endif %}
   {% if c.notes %}<div class="small muted">{{ c.notes }}</div>{% endif %}
+  <div class="row small">
+    {% if c.logo_path %}
+    <img src="/media/assets/{{ c.logo_path }}" alt="campaign logo" class="logo-thumb">
+    <span>Logo burned into every clip (top-right)</span>
+    <form method="post" action="/campaigns/{{ c.id }}/logo/remove"><button class="small">Remove logo</button></form>
+    {% else %}
+    <span class="muted">No logo. Add one only if the brief requires it; some briefs ban extra logos.</span>
+    {% endif %}
+  </div>
+  <form method="post" action="/campaigns/{{ c.id }}/logo" enctype="multipart/form-data" class="row small">
+    <input type="file" name="logo" accept="image/png,image/jpeg,image/webp" required>
+    <button class="small">{{ 'Replace' if c.logo_path else 'Upload' }} logo</button>
+  </form>
   <form method="post" action="/campaigns/{{ c.id }}/status" class="row">
     {% for st in ['active','paused','ended'] if st != c.status %}
     <button class="small" name="status" value="{{ st }}">Mark {{ st }}</button>

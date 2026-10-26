@@ -91,10 +91,13 @@ def test_worker_api_requires_token_and_round_trips(client, conn):
     assert client.post("/api/worker/claim", json={"worker": "l", "host": "laptop",
                                                   "kinds": ["fetch"]}).status_code == 401
     client.post("/campaigns", data={"name": "Remote", "rate_usd": "1"})
-    client.post("/sources", data={"campaign_id": "1", "urls": FIXTURE.resolve().as_uri()})
+    # A link (not a local file) isn't pinned, so whichever worker asks first gets it.
+    client.post("/sources", data={"campaign_id": "1",
+                                  "urls": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"})
     h = {"Authorization": "Bearer test-token"}
     r = client.post("/api/worker/claim", headers=h,
-                    json={"worker": "laptop-remote-1", "host": "laptop", "kinds": ["fetch"]})
+                    json={"worker": "laptop-remote-1", "host": "laptop", "kinds": ["fetch"],
+                          "protocol": 2})
     assert r.status_code == 200
     job = r.json()["job"]
     r = client.post(f"/api/worker/jobs/{job['id']}/result", headers=h,

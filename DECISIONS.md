@@ -107,3 +107,17 @@ A webhook is a URL you create in channel settings. It can only post into that on
 ## D18. Network: bind to the Tailscale IP only
 - `CF_BIND_HOST` is the Tailscale IP in production (127.0.0.1 until Tailscale is logged back in). It's never 0.0.0.0, and it's never routed through Cloudflare or Caddy.
 - **Recommended upgrade:** `tailscale serve --bg 8420` gives `https://raspberrypi.<tailnet>.ts.net` with a real certificate, visible only inside your tailnet. That enables the modern clipboard API and makes copying captions on iOS reliable.
+
+## D19. Campaign logos: burned in as a "TV bug", required means required
+- **Why:** campaign briefs (e.g. Man On) require the brand logo to be "CLEARLY VISIBLE". Other briefs (e.g. GFuel) ban any logo that isn't required, so the logo is per campaign and off by default.
+- **Placement:** 210 px wide, top-right corner of the 16:9 picture (y≈556 on the 1080×1920 canvas). That's below the hook box and the disclosure, and above where TikTok's right-hand buttons start. Captions draw on top of it.
+- **Storage:** the upload is shrunk once to a 480 px PNG with alpha under `data/assets/logos/c<id>-<sha>.png`. The content hash in the name means a replaced logo can never be served from a stale laptop cache.
+- **Failure mode:** if a campaign has a logo and the file is missing on the render machine, the render **fails**. A clip without a required logo gets disqualified, so a loud error is better than a quiet skip.
+- **Rejected:** putting the logo in the ASS subtitles (they can't do images); a corner of the full canvas (it collides with platform UI); asking you to add it in an editor by hand (it doesn't scale).
+
+## D20. Local footage is used in place; Windows paths go to the laptop
+- **Why:** campaign footage often comes from Drive folders that hit download quotas, so you download it by hand. Man On ep-4 is a 4.85 GB 4K file, and the Pi had 4.8 GB free.
+- **How:** a source can be a path (`C:\…`, `/home/…`, or `file://…`). The fetch stage probes it with ffprobe and records the path. Nothing is copied, and raw-media cleanup only deletes `data/raw/<id>`, so your original file is never deleted.
+- **Pinning:** the fetch job is pinned to the machine that has the file. A Windows path means the most recently seen laptop worker; a POSIX path means the Pi; `--on HOST` (CLI) or the Sources form overrides. Transcribe and render follow automatically through media affinity (D5).
+- **Worker protocol:** remote workers send `protocol: 2`. The Pi answers older workers with HTTP 426 and doesn't count them as online. Otherwise an outdated laptop would render Man On clips without the logo.
+- **4K:** no 1080p proxy. The laptop decodes 4K fast enough, and the renderer scales down anyway. If the Pi ever has to render 4K, it's slow but correct.

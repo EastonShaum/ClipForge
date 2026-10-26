@@ -22,6 +22,10 @@ from clipforge.db import session
 
 log = logging.getLogger(__name__)
 ALL_KINDS = ["fetch", "transcribe", "select", "render"]
+# Bump when a remote worker must understand something new in a job context. The Pi refuses
+# older workers, so an outdated laptop can't quietly render clips without a required logo.
+# 2: campaign logos (ctx.logo_rel) and local-file sources.
+WORKER_PROTOCOL = 2
 _stop = False
 
 
@@ -63,7 +67,8 @@ class RemoteClient:
 
     def claim(self, name: str, host: str, kinds: list[str]) -> dict | None:
         r = self.http.post("/api/worker/claim", json={"worker": name, "host": host,
-                                                      "kinds": kinds})
+                                                      "kinds": kinds,
+                                                      "protocol": WORKER_PROTOCOL})
         if r.status_code == 204:
             return None
         r.raise_for_status()
@@ -79,6 +84,18 @@ class RemoteClient:
             r = self.http.post(f"/api/worker/jobs/{job_id}/result",
                                data={"result": json.dumps(result)})
         r.raise_for_status()
+
+    def fetch_asset(self, rel: str, dest: Path) -> None:
+        """Download a campaign asset (logo) once. Names carry a content hash, so a cached copy
+        is never stale."""
+        if dest.is_file():
+            return
+        r = self.http.get(f"/api/worker/assets/{rel}")
+        r.raise_for_status()
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dest.with_suffix(".part")
+        tmp.write_bytes(r.content)
+        tmp.replace(dest)
 
     def defer(self, job_id: int, seconds: float, reason: str) -> None:
         self.http.post(f"/api/worker/jobs/{job_id}/defer",
@@ -109,6 +126,8 @@ def run_remote(base_url: str, kinds: list[str], idle_s: float = 10.0):
         job, ctx = claimed["job"], claimed["ctx"]
         log.info("claimed job %s %s", job["id"], job["kind"])
         try:
+            if ctx.get("logo_rel"):
+                client.fetch_asset(ctx["logo_rel"], s.assets_dir / ctx["logo_rel"])
             with tempfile.TemporaryDirectory() as tmp:
                 result = pipeline.run_handler(s, job["kind"], ctx, out_dir=Path(tmp))
                 upload = Path(result.pop("path")) if job["kind"] == "render" else None

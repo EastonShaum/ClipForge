@@ -10,20 +10,21 @@ from typing import Annotated
 from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import JSONResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from clipforge import analytics, costs, jobqueue, pipeline
-from clipforge.campaigns import CampaignIn, add_campaign, list_campaigns
+from clipforge.campaigns import CampaignIn, add_campaign, clear_logo, list_campaigns, set_logo
 from clipforge.captions import PLATFORM_REMINDER
 from clipforge.config import get_settings
 from clipforge.db import connect, init_db, tx, utcnow
 from clipforge.feedback import REJECT_REASONS
-from clipforge.ingest import add_source
+from clipforge.ingest import add_source, remote_hosts
 from clipforge.select_prompts import sync_prompts
 from clipforge.stages.fetch import dir_size_gb, free_gb
+from clipforge.worker import WORKER_PROTOCOL
 
 log = logging.getLogger(__name__)
 HERE = Path(__file__).parent
@@ -46,6 +47,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="ClipForge", docs_url=None, redoc_url=None)
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     app.mount("/media/clips", StaticFiles(directory=s.clips_dir), name="clips")
+    app.mount("/media/assets", StaticFiles(directory=s.assets_dir), name="assets")
     _routes(app)
     return app
 
@@ -199,6 +201,19 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         conn.execute("UPDATE campaigns SET status=? WHERE id=?", (status, cid))
         return back("/campaigns", "Updated")
 
+    @app.post("/campaigns/{cid}/logo")
+    async def campaign_logo(cid: int, conn: DB, logo: UploadFile = File(...)):
+        try:
+            set_logo(conn, cid, await logo.read())
+        except ValueError as e:
+            return back("/campaigns", str(e))
+        return back("/campaigns", "Logo saved. New renders will include it.")
+
+    @app.post("/campaigns/{cid}/logo/remove")
+    def campaign_logo_remove(cid: int, conn: DB):
+        clear_logo(conn, cid)
+        return back("/campaigns", "Logo removed")
+
     @app.get("/sources")
     def sources(request: Request, conn: DB, msg: str = ""):
         rows = conn.execute(
@@ -209,14 +224,20 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
                FROM sources s JOIN campaigns c ON c.id=s.campaign_id
                ORDER BY s.id DESC LIMIT 100""").fetchall()
         return page(request, "sources.html", sources=rows,
-                    campaigns=list_campaigns(conn, "active"), msg=msg)
+                    campaigns=list_campaigns(conn, "active"),
+                    hosts=[s.host_name, *remote_hosts(conn)], msg=msg)
 
     @app.post("/sources")
-    def create_source(conn: DB, campaign_id: int = Form(...), urls: str = Form(...)):
+    def create_source(conn: DB, campaign_id: int = Form(...), urls: str = Form(...),
+                      host: str = Form("")):
         added = dup = 0
-        for url in filter(None, (u.strip() for u in urls.split())):
-            with tx(conn):
-                _, created = add_source(conn, campaign_id, url)
+        # One per line, not per whitespace: Windows paths often contain spaces.
+        for url in filter(None, (u.strip() for u in urls.splitlines())):
+            try:
+                with tx(conn):
+                    _, created = add_source(conn, campaign_id, url, host or None)
+            except ValueError as e:
+                return back("/sources", str(e))
             added += created
             dup += not created
         return back("/sources", f"Queued {added} source(s)" + (f", {dup} already known" if dup
@@ -249,9 +270,14 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         worker: str
         host: str
         kinds: list[str]
+        protocol: int = 1
 
     @app.post("/api/worker/claim", dependencies=[Worker])
     def api_claim(body: ClaimIn, conn: DB):
+        if body.protocol < WORKER_PROTOCOL:
+            # No heartbeat either: an outdated laptop must not count as online.
+            raise HTTPException(426, "laptop worker is outdated: install the latest ClipForge "
+                                     "zip on it, keep its .env, and restart it")
         jobqueue.heartbeat(conn, body.worker, body.kinds)
         kinds = [k for k in body.kinds if k != "select"]  # selection always runs on the Pi
         for _ in range(5):
@@ -294,6 +320,14 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
             data["size_bytes"] = dest.stat().st_size
         pipeline.apply_result(conn, s, job, data, host=host)
         return {"ok": True}
+
+    @app.get("/api/worker/assets/{rel:path}", dependencies=[Worker])
+    def api_asset(rel: str):
+        root = s.assets_dir.resolve()
+        p = (root / rel).resolve()
+        if not p.is_relative_to(root) or not p.is_file():
+            raise HTTPException(404, "no such asset")
+        return FileResponse(p)
 
     class DeferIn(BaseModel):
         seconds: float

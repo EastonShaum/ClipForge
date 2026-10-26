@@ -53,6 +53,15 @@ def tx(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
     conn.execute("COMMIT")
 
 
+# Columns added after a table first shipped. CREATE TABLE IF NOT EXISTS won't add them to an
+# existing DB, so add any that are missing. Additive only: never drop or retype.
+ADDED_COLUMNS = [("campaigns", "logo_path", "TEXT")]
+
+
 def init_db(path: Path | None = None) -> None:
     with session(path) as conn:
         conn.executescript(SCHEMA.read_text())
+        for table, col, decl in ADDED_COLUMNS:
+            have = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+            if col not in have:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")

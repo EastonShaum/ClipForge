@@ -75,6 +75,15 @@ def campaign_add(
     typer.echo(f"Campaign #{cid} added: ${effective_per_1k(rate, per):.2f} per 1K views")
 
 
+@campaign_app.command("logo")
+def campaign_logo(campaign_id: int, image: Path):
+    """Set the logo a campaign requires in every clip (PNG with transparency works best)."""
+    from clipforge.campaigns import set_logo
+
+    rel = set_logo(_init(), campaign_id, image.read_bytes())
+    typer.echo(f"campaign #{campaign_id} logo -> {rel}")
+
+
 @campaign_app.command("list")
 def campaign_list():
     from clipforge.campaigns import list_campaigns
@@ -85,15 +94,20 @@ def campaign_list():
 
 
 @app.command()
-def source(campaign_id: int, urls: list[str]):
-    """Queue footage links for a campaign."""
+def source(
+    campaign_id: int,
+    urls: list[str],
+    on: Annotated[str | None, typer.Option(help="Machine that has these local files "
+                                           "(default: C:\\… = laptop, /… = this Pi)")] = None,
+):
+    """Queue footage for a campaign: links, or paths of files already downloaded."""
     from clipforge.db import tx
     from clipforge.ingest import add_source
 
     conn = _init()
     for url in urls:
         with tx(conn):
-            sid, created = add_source(conn, campaign_id, url)
+            sid, created = add_source(conn, campaign_id, url, on)
         typer.echo(f"{'queued' if created else 'already known'}: source #{sid} {url}")
 
 

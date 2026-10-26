@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS campaigns (
     watch_feeds     TEXT NOT NULL DEFAULT '',               -- YouTube RSS URLs to poll
     end_date        TEXT,
     notes           TEXT NOT NULL DEFAULT '',
+    logo_path       TEXT,                                   -- assets/-relative PNG burned into clips
     status          TEXT NOT NULL DEFAULT 'active',         -- active | paused | ended | blocked
     created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );

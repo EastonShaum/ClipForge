@@ -93,10 +93,15 @@ class Settings(BaseSettings):
     def work_dir(self) -> Path:
         return self.data_dir / "work"
 
+    @property
+    def assets_dir(self) -> Path:
+        """Campaign assets (logos). The Pi holds the originals; remote workers cache copies."""
+        return self.data_dir / "assets"
+
 
 @lru_cache
 def get_settings() -> Settings:
     s = Settings()
-    for d in (s.data_dir, s.raw_dir, s.clips_dir, s.work_dir):
+    for d in (s.data_dir, s.raw_dir, s.clips_dir, s.work_dir, s.assets_dir):
         d.mkdir(parents=True, exist_ok=True)
     return s

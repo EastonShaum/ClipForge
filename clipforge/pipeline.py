@@ -35,7 +35,7 @@ class Deferred(Exception):
 
 def _source(conn, sid: int) -> sqlite3.Row:
     return conn.execute(
-        "SELECT s.*, c.category, c.name AS campaign_name, c.disclosure FROM sources s"
+        "SELECT s.*, c.category, c.name AS campaign_name, c.disclosure, c.logo_path FROM sources s"
         " JOIN campaigns c ON c.id = s.campaign_id WHERE s.id = ?", (sid,)
     ).fetchone()
 
@@ -82,7 +82,7 @@ def build_context(conn: sqlite3.Connection, s: Settings, job: sqlite3.Row) -> di
                 "media_path": src["media_path"], "words": words,
                 "start_ms": cand["start_ms"], "end_ms": cand["end_ms"],
                 "hook": cand["hook_text"], "out_rel": f"{src['id']}/c{cand['id']}.mp4",
-                "disclosure": src["disclosure"]}
+                "disclosure": src["disclosure"], "logo_rel": src["logo_path"]}
     raise ValueError(f"unknown job kind {kind}")
 
 
@@ -102,7 +102,8 @@ def run_handler(s: Settings, kind: str, ctx: dict, out_dir: Path | None = None) 
             return render_stage.render(s, media_path=ctx["media_path"], words=ctx["words"],
                                        start_ms=ctx["start_ms"], end_ms=ctx["end_ms"],
                                        hook=ctx["hook"], out_path=out, work=work,
-                                       disclosure=_onscreen_disclosure(ctx.get("disclosure")))
+                                       disclosure=_onscreen_disclosure(ctx.get("disclosure")),
+                                       logo_path=_logo(s, ctx.get("logo_rel")))
     except fetch_stage.DiskFull as e:
         raise Deferred(str(e), 1800) from e
     except transcribe_stage.MissingKey as e:
@@ -110,6 +111,16 @@ def run_handler(s: Settings, kind: str, ctx: dict, out_dir: Path | None = None) 
     finally:
         _rm_tree(work)
     raise ValueError(f"unknown job kind {kind}")
+
+
+def _logo(s: Settings, rel: str | None) -> str | None:
+    """A campaign's logo is a requirement, so a missing file is an error, never a silent skip."""
+    if not rel:
+        return None
+    p = s.assets_dir / rel
+    if not p.is_file():
+        raise FileNotFoundError(f"campaign logo {rel} missing on this machine")
+    return str(p)
 
 
 def _onscreen_disclosure(text: str | None) -> str:

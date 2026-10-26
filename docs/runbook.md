@@ -33,7 +33,15 @@ yt-dlp breaks when YouTube changes things. Update it with `uv lock --upgrade-pac
 ## Add footage
 - **UI:** Sources page (several links, one per line).
 - **CLI:** `cf source <campaign_id> <url> [<url>…]`
-- **Footage you downloaded by hand** (e.g. from a campaign Drive folder): `cf source 1 file:///home/pi/footage/ep12.mp4`
+- **Footage you downloaded by hand** (e.g. from a campaign Drive folder): paste the file's full path. It's used where it sits, never copied or deleted.
+  - On the laptop: `C:\Users\Easton\Clipping\Campaigns\ManOn\ep4.mp4` (in Explorer: Shift+right-click → "Copy as path"). It's pinned to the laptop automatically.
+  - On the Pi: `/home/pi/footage/ep12.mp4`.
+  - CLI: `cf source 1 "C:\…\ep4.mp4"`, plus `--on <host>` to choose the machine explicitly.
+
+## Campaign logo (when the brief requires one)
+- **UI:** Campaigns → the campaign → choose a PNG → Upload logo. **CLI:** `cf campaign logo 1 ~/Downloads/logo.png`.
+- It's burned into the top-right of every clip rendered **after** the upload. Clips already rendered don't change.
+- Don't add a logo to campaigns whose brief bans extra logos (GFuel does).
 
 ## Back up the database
 ```bash
@@ -60,7 +68,9 @@ Worker token: generate with `openssl rand -hex 24`. It must match on the Pi and 
 3. Paste `CF_WORKER_TOKEN` (from the Pi's `.env`) and `CF_GROQ_API_KEY` into the laptop's `.env`.
 4. Double-click `scripts\laptop\start-worker.bat`. Leave the window open; close it to stop.
 
-The Pi dashboard shows "Laptop worker: online". New downloads now land on the laptop, and renders for those sources run there. To start it at login, put a shortcut to the `.bat` in `shell:startup`.
+The Pi dashboard shows "Laptop worker: online".
+
+**Updating the laptop:** after the code changes, the Pi refuses old laptop workers. The worker window then logs `426 Upgrade Required` every 30 s. Stop the worker, unzip the new `clipforge-laptop.zip` over the old folder (it never contains `.env`, so yours is kept), run `uv sync` in the folder, then start the worker again. New downloads now land on the laptop, and renders for those sources run there. To start it at login, put a shortcut to the `.bat` in `shell:startup`.
 
 ## A/B prompt versions
 - Prompts are the files `clipforge/prompts/select-*.md`. Editing a file creates a new version on the next service restart.
