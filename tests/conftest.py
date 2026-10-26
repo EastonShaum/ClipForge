@@ -1,0 +1,42 @@
+import pytest
+
+from clipforge import config
+from clipforge.db import connect, init_db
+
+
+@pytest.fixture(autouse=True)
+def settings(tmp_path, monkeypatch):
+    """Every test gets its own data dir, DB, and offline providers."""
+    monkeypatch.setenv("CF_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("CF_TRANSCRIBE_PROVIDER", "fake")
+    monkeypatch.setenv("CF_SELECT_PROVIDER", "fake")
+    monkeypatch.setenv("CF_DISCORD_WEBHOOK_URL", "")
+    monkeypatch.setenv("CF_WORKER_TOKEN", "test-token")
+    monkeypatch.setenv("CF_MIN_CLIP_S", "8")
+    monkeypatch.setenv("CF_MAX_CLIP_S", "15")
+    monkeypatch.setenv("CF_CANDIDATES_KEEP", "2")
+    monkeypatch.setenv("CF_RENDER_PRESET", "ultrafast")
+    config.get_settings.cache_clear()
+    s = config.get_settings()
+    yield s
+    config.get_settings.cache_clear()
+
+
+@pytest.fixture
+def conn(settings):
+    init_db()
+    c = connect()
+    from clipforge.select_prompts import sync_prompts
+
+    sync_prompts(c)
+    yield c
+    c.close()
+
+
+@pytest.fixture
+def campaign_id(conn):
+    from clipforge.campaigns import CampaignIn, add_campaign
+
+    return add_campaign(conn, CampaignIn(name="Test Pod", category="podcast", rate_usd=40,
+                                         rate_per_views=100_000, min_views=10_000, cap_usd=100,
+                                         required_tags="@testpod #testcampaign"))
