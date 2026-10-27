@@ -31,12 +31,10 @@ yt-dlp breaks when YouTube changes things. Update it with `uv lock --upgrade-pac
 - Gambling/casino campaigns are refused by the blocklist (`CF_BLOCKED_KEYWORDS`, `CF_BLOCKED_CATEGORIES` in `.env`, as JSON lists).
 
 ## Add footage
-- **UI:** Sources page (several links, one per line).
-- **CLI:** `cf source <campaign_id> <url> [<url>…]`
-- **Footage you downloaded by hand** (e.g. from a campaign Drive folder): paste the file's full path. It's used where it sits, never copied or deleted.
-  - On the laptop: `C:\Users\Easton\Clipping\Campaigns\ManOn\ep4.mp4` (in Explorer: Shift+right-click → "Copy as path"). It's pinned to the laptop automatically.
-  - On the Pi: `/home/pi/footage/ep12.mp4`.
-  - CLI: `cf source 1 "C:\…\ep4.mp4"`, plus `--on <host>` to choose the machine explicitly.
+- **The usual way:** put the campaign's videos in its folder on the laptop: `C:\Users\Easton\CLipping\Campaigns\<campaign name>\`. Adding a campaign creates that folder within a minute while the laptop worker runs. Unzip Drive downloads there; files still downloading or copying are skipped until they settle (2 min).
+- Then open the campaign → **Queue footage for clipping…** → untick anything that isn't campaign footage → **Confirm and start clipping**. The page shows hours, API cost, clips to review and laptop render time before anything runs. Start with 5–10 videos.
+- The campaign page's **Use a different folder** picks another folder (Man On uses `ManOn`).
+- **Links instead:** the campaign page's "Add links instead" box, or the CLI `cf source <campaign_id> <url> [<url>…]`. A full file path also works (`--on <host>` picks the machine).
 
 ## Scout: which bounties to clip
 Screenshot the campaign pages on your phone (whole bounty cards in view), open **Scout**, and upload them all at once. A minute later Discord pings the top 3; the page ranks every open bounty and says why. Upload again the next day to see how fast each one fills. "Add as campaign" pre-fills the Campaigns form; read the bounty's doc before saving.

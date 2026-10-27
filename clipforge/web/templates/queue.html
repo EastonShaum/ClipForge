@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Queue footage · {{ c.name }} · ClipForge{% endblock %}
+{% block content %}
+<div class="small"><a href="/campaigns/{{ c.id }}">← {{ c.name }}</a></div>
+<h1>Confirm footage</h1>
+<form method="post" action="/campaigns/{{ c.id }}/queue" class="card">
+  <div class="small">Nothing runs until you confirm. Untick anything that isn't this campaign's footage.</div>
+  <div class="row small"><button type="button" class="small" onclick="tick(true)">Select all</button><button type="button" class="small" onclick="tick(false)">Select none</button></div>
+  <div class="files">
+  {% for f in files %}
+    <label class="file {{ 'muted' if f.settling }}">
+      <input type="checkbox" name="path" value="{{ f.path }}" data-h="{{ (f.duration_s or 0) / 3600 }}" {{ 'disabled' if f.settling else 'checked' }}>
+      <span>{{ f.rel.split('/', 1)[-1] }}</span>
+      <span class="muted">{% if f.settling %}still downloading or copying{% else %}{{ ((f.duration_s or 0) / 60)|round|int }} min · {{ (f.size / 1e9)|round(2) }} GB{% endif %}</span>
+    </label>
+  {% else %}
+    <div class="muted">No new videos in the folder.</div>
+  {% endfor %}
+  </div>
+  {% if files %}
+  <div class="small" id="est">
+    If you queue everything ready: <b>{{ est.files }} videos, {{ "%.1f"|format(est.hours) }} h</b> of footage →
+    about <b>${{ "%.2f"|format(est.usd) }}</b> in API costs (budget left this month ${{ "%.2f"|format(budget.cap - budget.month) }}),
+    up to <b>{{ est.clips }} clips</b> to review ({{ keep }} per video), ~{{ "%.1f"|format(est.render_h) }} h of laptop rendering.
+  </div>
+  {% if est.files > 10 %}<div class="small" style="color:var(--warn)">Tip: start with 5–10 videos. Review those clips first so the next batch learns from your feedback.</div>{% endif %}
+  <button class="go big" id="go">Confirm and start clipping</button>
+  {% endif %}
+</form>
+<script>
+const boxes = [...document.querySelectorAll('input[name=path]:not(:disabled)')];
+function tick(on) { boxes.forEach(b => b.checked = on); upd(); }
+function upd() {
+  const on = boxes.filter(b => b.checked);
+  const btn = document.getElementById('go');
+  if (btn) { btn.textContent = on.length ? `Confirm and start clipping (${on.length})` : 'Select at least one video'; btn.disabled = !on.length; }
+}
+boxes.forEach(b => b.addEventListener('change', upd)); upd();
+</script>
+{% endblock %}

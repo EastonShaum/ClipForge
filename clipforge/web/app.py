@@ -15,11 +15,13 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from clipforge import analytics, briefs, costs, jobqueue, pipeline, scout
+from clipforge import analytics, briefs, costs, jobqueue, library, pipeline, scout
 from clipforge.campaigns import (
     CampaignIn,
     add_campaign,
     add_logo,
+    delete_campaign,
+    get_campaign,
     list_campaigns,
     logo_list,
     remove_logo,
@@ -204,21 +206,89 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
                      (post_id, views, int(likes) if likes.strip().isdigit() else None))
         return back("/posts", "Views saved")
 
-    # ---------- campaigns & sources ----------
+    # ---------- campaigns (each with its footage, requirements and logos) ----------
+    def _camp_or_404(conn, cid: int) -> dict:
+        c = get_campaign(conn, cid)
+        if not c:
+            raise HTTPException(404, "no such campaign")
+        return c
+
     @app.get("/campaigns")
     def campaigns(request: Request, conn: DB, msg: str = ""):
         # Query params pre-fill the Add form (the Scout page's "Add as campaign" link).
         prefill = {k: v for k, v in request.query_params.items() if k != "msg"}
         camps = list_campaigns(conn)
         for c in camps:
-            c["docs"] = conn.execute(
-                """SELECT d.*, j.state, j.last_error FROM campaign_docs d
-                   LEFT JOIN jobs j ON j.dedupe_key='brief:'||d.id
-                   WHERE d.campaign_id=? ORDER BY d.id""", (c["id"],)).fetchall()
-            c["brief"] = briefs.merged(conn, c["id"])
-        pending = any(d["state"] in ("queued", "running") for c in camps for d in c["docs"])
-        return page(request, "campaigns.html", campaigns=camps, msg=msg, prefill=prefill,
-                    pending=pending)
+            c.update(dict(conn.execute(
+                """SELECT COUNT(DISTINCT s.id) sources, COUNT(k.id) clips,
+                          SUM(k.status='in_review') to_review
+                   FROM sources s LEFT JOIN candidates ca ON ca.source_id=s.id
+                   LEFT JOIN clips k ON k.candidate_id=ca.id WHERE s.campaign_id=?""",
+                (c["id"],)).fetchone()))
+        return page(request, "campaigns.html", campaigns=camps, msg=msg, prefill=prefill)
+
+    @app.get("/campaigns/{cid}")
+    def campaign_page(request: Request, cid: int, conn: DB, msg: str = ""):
+        c = _camp_or_404(conn, cid)
+        docs = conn.execute(
+            """SELECT d.*, j.state, j.last_error FROM campaign_docs d
+               LEFT JOIN jobs j ON j.dedupe_key='brief:'||d.id
+               WHERE d.campaign_id=? ORDER BY d.id""", (cid,)).fetchall()
+        sources = conn.execute(
+            """SELECT s.*,
+                      (SELECT last_error FROM jobs j WHERE j.source_id=s.id AND j.last_error
+                       IS NOT NULL ORDER BY j.updated_at DESC LIMIT 1) last_error,
+                      (SELECT COUNT(*) FROM candidates WHERE source_id=s.id AND kept=1) kept
+               FROM sources s WHERE s.campaign_id=? ORDER BY s.id DESC""", (cid,)).fetchall()
+        files = library.files_for(conn, c)
+        busy = any(d["state"] in ("queued", "running") for d in docs) or any(
+            r["status"] not in ("rendered", "failed") for r in sources)
+        return page(request, "campaign.html", c=c, docs=docs, brief=briefs.merged(conn, cid),
+                    sources=sources, files=files, folder=library.match_folder(conn, c),
+                    folders=library.folders(conn), new_files=[f for f in files
+                                                              if not f["queued"]],
+                    hosts=[s.host_name, *remote_hosts(conn)], busy=busy,
+                    library_dir=s.media_library_dir.name, msg=msg)
+
+    @app.post("/campaigns/{cid}/folder")
+    def campaign_folder(cid: int, conn: DB, folder: str = Form("")):
+        conn.execute("UPDATE campaigns SET media_folder=? WHERE id=?", (folder or None, cid))
+        return back(f"/campaigns/{cid}", f"Footage folder: {folder}" if folder
+                    else "Footage folder: matched by name")
+
+    @app.get("/campaigns/{cid}/queue")
+    def campaign_queue_confirm(request: Request, cid: int, conn: DB):
+        c = _camp_or_404(conn, cid)
+        files = [f for f in library.files_for(conn, c) if not f["queued"]]
+        ready = [f for f in files if not f["settling"]]
+        return page(request, "queue.html", c=c, files=files, est=library.estimate(ready),
+                    budget=costs.budget_status(conn), keep=s.candidates_keep)
+
+    @app.post("/campaigns/{cid}/queue")
+    def campaign_queue(cid: int, conn: DB, path: list[str] = Form([])):
+        c = _camp_or_404(conn, cid)
+        known = {f["path"]: f for f in library.files_for(conn, c)}
+        added = 0
+        for p in path:
+            f = known.get(p)
+            if not f or f["queued"] or f["settling"]:
+                continue
+            with tx(conn):
+                _, created = add_source(conn, cid, f["path"], f["host"])
+            added += created
+        if not added:
+            return back(f"/campaigns/{cid}", "Nothing queued")
+        return back(f"/campaigns/{cid}", f"Queued {added} video(s) for clipping")
+
+    @app.post("/campaigns/{cid}/delete")
+    def campaign_delete(cid: int, conn: DB):
+        c = _camp_or_404(conn, cid)
+        try:
+            n = delete_campaign(conn, cid)
+        except ValueError as e:
+            return back(f"/campaigns/{cid}", str(e))
+        return back("/campaigns", f"Deleted {c['name']}: {n['sources']} videos, {n['clips']}"
+                    f" clips, {n['posts']} posts")
 
     @app.post("/campaigns/{cid}/docs")
     async def campaign_docs_upload(cid: int, conn: DB, docs: list[UploadFile] = File(...)):
@@ -240,13 +310,13 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
                                      affinity_host=s.host_name, priority=50)
                     added += 1
         if not added:
-            return back("/campaigns", "Nothing new: already uploaded, or not an image")
-        return back(f"/campaigns#c{cid}", f"Reading {added} requirement screenshot(s)…")
+            return back(f"/campaigns/{cid}", "Nothing new: already uploaded, or not an image")
+        return back(f"/campaigns/{cid}", f"Reading {added} requirement screenshot(s)…")
 
     @app.post("/campaigns/{cid}/docs/apply")
     def campaign_docs_apply(cid: int, conn: DB):
         changes = briefs.apply(conn, cid)
-        return back(f"/campaigns#c{cid}", "Updated " + "; ".join(changes) if changes
+        return back(f"/campaigns/{cid}", "Updated " + "; ".join(changes) if changes
                     else "Nothing new to apply")
 
     @app.post("/campaigns/{cid}/docs/{doc_id}/delete")
@@ -260,7 +330,72 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
             if not conn.execute("SELECT 1 FROM campaign_docs WHERE path=?",
                                 (row["path"],)).fetchone():
                 (s.assets_dir / row["path"]).unlink(missing_ok=True)
-        return back(f"/campaigns#c{cid}", "Screenshot removed")
+        return back(f"/campaigns/{cid}", "Screenshot removed")
+
+    @app.post("/campaigns")
+    async def create_campaign(request: Request, conn: DB):
+        form = dict(await request.form())
+        data = {k: v for k, v in form.items() if v not in ("", None)}
+        if "rate_mode" in data:  # UI lets you enter "$40 per 100K" style rates
+            data["rate_per_views"] = int(data.pop("rate_mode"))
+        force = data.pop("force", None) == "on"
+        try:
+            cid = add_campaign(conn, CampaignIn(**data), force=force)
+        except (ValueError, TypeError) as e:
+            return back("/campaigns", str(e).split("\n")[0][:200])
+        return back(f"/campaigns/{cid}", f"Campaign #{cid} added")
+
+    @app.post("/campaigns/{cid}/status")
+    def campaign_status(cid: int, conn: DB, status: str = Form(...)):
+        conn.execute("UPDATE campaigns SET status=? WHERE id=?", (status, cid))
+        return back(f"/campaigns/{cid}", "Updated")
+
+    @app.post("/campaigns/{cid}/end-date")
+    def campaign_end_date(cid: int, conn: DB, end_date: str = Form("")):
+        conn.execute("UPDATE campaigns SET end_date=? WHERE id=?", (end_date or None, cid))
+        return back(f"/campaigns/{cid}", "End date saved" if end_date else "End date cleared")
+
+    @app.post("/campaigns/{cid}/logo")
+    async def campaign_logo(cid: int, conn: DB, logo: UploadFile = File(...)):
+        try:
+            add_logo(conn, cid, await logo.read())
+        except ValueError as e:
+            return back(f"/campaigns/{cid}", str(e))
+        return back(f"/campaigns/{cid}", "Logo added. New renders will include it.")
+
+    @app.post("/campaigns/{cid}/logo/remove")
+    def campaign_logo_remove(cid: int, conn: DB, rel: str = Form("")):
+        remove_logo(conn, cid, rel or None)
+        return back(f"/campaigns/{cid}", "Logo removed")
+
+    @app.get("/sources")
+    def sources():  # footage now lives on each campaign's page
+        return RedirectResponse("/campaigns", status_code=303)
+
+    @app.post("/sources")
+    def create_source(conn: DB, campaign_id: int = Form(...), urls: str = Form(...),
+                      host: str = Form("")):
+        added = dup = 0
+        # One per line, not per whitespace: Windows paths often contain spaces.
+        for url in filter(None, (u.strip() for u in urls.splitlines())):
+            try:
+                with tx(conn):
+                    _, created = add_source(conn, campaign_id, url, host or None)
+            except ValueError as e:
+                return back(f"/campaigns/{campaign_id}", str(e))
+            added += created
+            dup += not created
+        return back(f"/campaigns/{campaign_id}", f"Queued {added} source(s)"
+                    + (f", {dup} already known" if dup else ""))
+
+    @app.post("/sources/{sid}/retry")
+    def retry_source(sid: int, conn: DB):
+        conn.execute("UPDATE jobs SET state='queued', attempts=0, run_after=? WHERE source_id=?"
+                     " AND state IN ('dead','failed','queued')", (utcnow(), sid))
+        conn.execute("UPDATE sources SET status=CASE WHEN status='failed' THEN 'new' ELSE status"
+                     " END, error=NULL WHERE id=?", (sid,))
+        row = conn.execute("SELECT campaign_id FROM sources WHERE id=?", (sid,)).fetchone()
+        return back(f"/campaigns/{row['campaign_id']}" if row else "/campaigns", "Retrying")
 
     # ---------- scouting ----------
     @app.get("/scout")
@@ -313,79 +448,6 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
                 conn.execute("DELETE FROM scout_shots WHERE id=?", (shot_id,))
             (s.assets_dir / row["path"]).unlink(missing_ok=True)
         return back("/scout", "Screenshot and its bounties removed")
-
-    @app.post("/campaigns")
-    async def create_campaign(request: Request, conn: DB):
-        form = dict(await request.form())
-        data = {k: v for k, v in form.items() if v not in ("", None)}
-        if "rate_mode" in data:  # UI lets you enter "$40 per 100K" style rates
-            data["rate_per_views"] = int(data.pop("rate_mode"))
-        force = data.pop("force", None) == "on"
-        try:
-            cid = add_campaign(conn, CampaignIn(**data), force=force)
-        except (ValueError, TypeError) as e:
-            return back("/campaigns", str(e).split("\n")[0][:200])
-        return back("/campaigns", f"Campaign #{cid} added")
-
-    @app.post("/campaigns/{cid}/status")
-    def campaign_status(cid: int, conn: DB, status: str = Form(...)):
-        conn.execute("UPDATE campaigns SET status=? WHERE id=?", (status, cid))
-        return back("/campaigns", "Updated")
-
-    @app.post("/campaigns/{cid}/end-date")
-    def campaign_end_date(cid: int, conn: DB, end_date: str = Form("")):
-        conn.execute("UPDATE campaigns SET end_date=? WHERE id=?", (end_date or None, cid))
-        return back("/campaigns", "End date saved" if end_date else "End date cleared")
-
-    @app.post("/campaigns/{cid}/logo")
-    async def campaign_logo(cid: int, conn: DB, logo: UploadFile = File(...)):
-        try:
-            add_logo(conn, cid, await logo.read())
-        except ValueError as e:
-            return back("/campaigns", str(e))
-        return back("/campaigns", "Logo added. New renders will include it.")
-
-    @app.post("/campaigns/{cid}/logo/remove")
-    def campaign_logo_remove(cid: int, conn: DB, rel: str = Form("")):
-        remove_logo(conn, cid, rel or None)
-        return back("/campaigns", "Logo removed")
-
-    @app.get("/sources")
-    def sources(request: Request, conn: DB, msg: str = ""):
-        rows = conn.execute(
-            """SELECT s.*, c.name campaign,
-                      (SELECT last_error FROM jobs j WHERE j.source_id=s.id AND j.last_error
-                       IS NOT NULL ORDER BY j.updated_at DESC LIMIT 1) last_error,
-                      (SELECT COUNT(*) FROM candidates WHERE source_id=s.id AND kept=1) kept
-               FROM sources s JOIN campaigns c ON c.id=s.campaign_id
-               ORDER BY s.id DESC LIMIT 100""").fetchall()
-        return page(request, "sources.html", sources=rows,
-                    campaigns=list_campaigns(conn, "active"),
-                    hosts=[s.host_name, *remote_hosts(conn)], msg=msg)
-
-    @app.post("/sources")
-    def create_source(conn: DB, campaign_id: int = Form(...), urls: str = Form(...),
-                      host: str = Form("")):
-        added = dup = 0
-        # One per line, not per whitespace: Windows paths often contain spaces.
-        for url in filter(None, (u.strip() for u in urls.splitlines())):
-            try:
-                with tx(conn):
-                    _, created = add_source(conn, campaign_id, url, host or None)
-            except ValueError as e:
-                return back("/sources", str(e))
-            added += created
-            dup += not created
-        return back("/sources", f"Queued {added} source(s)" + (f", {dup} already known" if dup
-                                                                else ""))
-
-    @app.post("/sources/{sid}/retry")
-    def retry_source(sid: int, conn: DB):
-        conn.execute("UPDATE jobs SET state='queued', attempts=0, run_after=? WHERE source_id=?"
-                     " AND state IN ('dead','failed','queued')", (utcnow(), sid))
-        conn.execute("UPDATE sources SET status=CASE WHEN status='failed' THEN 'new' ELSE status"
-                     " END, error=NULL WHERE id=?", (sid,))
-        return back("/sources", "Retrying")
 
     # ---------- dashboard ----------
     @app.get("/dashboard")
@@ -478,6 +540,23 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         if not p.is_relative_to(root) or not p.is_file():
             raise HTTPException(404, "no such asset")
         return FileResponse(p)
+
+    class LibraryIn(BaseModel):
+        host: str
+        files: list[dict]
+
+    @app.get("/api/worker/library/folders", dependencies=[Worker])
+    def api_library_folders(conn: DB):
+        """Footage folders the media machine should have: one per active campaign."""
+        rows = conn.execute("SELECT media_folder FROM campaigns WHERE status='active' AND"
+                            " media_folder IS NOT NULL ORDER BY id").fetchall()
+        return {"folders": [r["media_folder"] for r in rows]}
+
+    @app.post("/api/worker/library", dependencies=[Worker])
+    def api_library(body: LibraryIn, conn: DB):
+        with tx(conn):
+            n = library.store(conn, body.host, body.files)
+        return {"ok": True, "files": n}
 
     class DeferIn(BaseModel):
         seconds: float

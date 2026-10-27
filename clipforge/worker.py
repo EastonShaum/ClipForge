@@ -17,7 +17,7 @@ from pathlib import Path
 
 import httpx
 
-from clipforge import jobqueue, pipeline, tools
+from clipforge import jobqueue, library, pipeline, tools
 from clipforge.config import get_settings
 from clipforge.db import session
 from clipforge.update import UPDATE_EXIT_CODE, local_version
@@ -29,6 +29,7 @@ ALL_KINDS = ["fetch", "transcribe", "select", "render"]
 # 2: campaign logos (ctx.logo_rel) and local-file sources.
 # 3: several logos per campaign (ctx.logo_rels), drawn as a row under the captions.
 WORKER_PROTOCOL = 3
+LIBRARY_SCAN_S = 60
 _stop = False
 
 
@@ -107,6 +108,15 @@ class RemoteClient:
         tmp.write_bytes(r.content)
         tmp.replace(dest)
 
+    def library(self, host: str, files: list[dict]) -> None:
+        self.http.post("/api/worker/library",
+                       json={"host": host, "files": files}).raise_for_status()
+
+    def campaign_folders(self) -> list[str]:
+        r = self.http.get("/api/worker/library/folders")
+        r.raise_for_status()
+        return r.json()["folders"]
+
     def defer(self, job_id: int, seconds: float, reason: str) -> None:
         self.http.post(f"/api/worker/jobs/{job_id}/defer",
                        json={"seconds": seconds, "reason": reason}).raise_for_status()
@@ -128,7 +138,21 @@ def run_remote(base_url: str, kinds: list[str], idle_s: float = 10.0):
         sys.exit(2)
     client = RemoteClient(base_url, s.worker_token)
     log.info("remote worker %s -> %s for %s", name, base_url, kinds)
+    log.info("media library: %s", s.media_library_dir)
+    last_scan, last_report = 0.0, None
     while not _stop:
+        if time.monotonic() - last_scan >= LIBRARY_SCAN_S:
+            last_scan = time.monotonic()
+            try:
+                library.make_folders(s.media_library_dir, client.campaign_folders())
+                files = library.scan(s.media_library_dir)
+                report = [(f["rel"], f["size"], f["mtime"], f["duration_s"]) for f in files]
+                if report != last_report:  # only send when something changed
+                    client.library(host, files)
+                    last_report = report
+                    log.info("reported %d library files", len(files))
+            except (OSError, httpx.HTTPError) as e:
+                log.warning("library scan/report failed: %s", e)
         try:
             claimed = client.claim(name, host, kinds)
         except Outdated:

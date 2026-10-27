@@ -160,3 +160,15 @@ A webhook is a URL you create in channel settings. It can only post into that on
 - **How:** on a campaign card, "Upload requirement screenshots" stores each image (deduplicated per campaign) and queues a `brief:<doc_id>` job on the Pi. Haiku reads the tags, platforms, length, end date, footage links, logo rule and other rules (~$0.0008 each, logged). The card shows them merged across screenshots.
 - **Apply to campaign** only adds or fills in: tags, platforms, end date, empty caption text, links, and rules appended to notes. It never removes anything and never touches the disclosure; if the brief names its own wording, the card shows it for you to add.
 - **Not yet:** the selector prompt doesn't see brief rules (e.g. "mention G FUEL on screen"). That comes with the GFuel flow.
+
+## D26. One page per campaign; footage comes from the laptop's Campaigns folder, confirmed first
+- **Why:** you download big footage sets (Brandon Joe Williams: 80 GB) to the laptop. Pasting paths one by one doesn't scale, and a typo or a stray file means paid transcription of the wrong video.
+- **How:**
+  - Every campaign gets its own page: footage, requirements, logos, settings, delete. The Sources tab is gone (`/sources` redirects).
+  - New campaigns get `media_folder` = the name minus Windows-forbidden characters. On each scan (every 60 s, between jobs) the laptop worker asks `/api/worker/library/folders` and creates any missing folder under `media_library_dir` (`<repo>/Campaigns`, kept out of git and out of self-updates).
+  - The worker reports every video file there (path, size, mtime, ffprobe duration) to `/api/worker/library`, only when something changed. The Pi replaces that host's rows in `library_files`.
+  - Campaigns without a set folder (Man On) match a folder by name.
+  - Files modified in the last 2 minutes or that ffprobe can't read count as "still downloading" and can't be queued. Chrome's `.crdownload` files aren't listed at all.
+  - **Queue footage** shows a confirmation page first: files with checkboxes, hours, estimated API cost against the budget left, clips to review and laptop render time. Only **Confirm** creates sources, each pinned to the host that has the file.
+- **Delete campaign:** removes the campaign and all ClipForge rows and files for it (sources, clips and their files, posts, views, jobs, brief screenshots, logos). It never touches your footage, keeps `api_costs` (money spent is history), and refuses while one of its jobs is running.
+- **Theme:** dark by default, with a ◐ switch in the nav that each device remembers (localStorage).

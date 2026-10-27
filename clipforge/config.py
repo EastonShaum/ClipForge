@@ -16,6 +16,9 @@ class Settings(BaseSettings):
 
     # Storage
     data_dir: Path = ROOT / "data"
+    # Campaign footage you downloaded, one folder per campaign (e.g. Campaigns/ManOn/...). The
+    # laptop worker lists it for the Pi; files are clipped in place, never moved or deleted.
+    media_library_dir: Path = ROOT / "Campaigns"
     media_cap_gb: float = 5.0  # hard cap for raw media on this host
     min_free_gb: float = 2.0  # refuse downloads below this much free disk
     raw_retention_hours: int = 48  # delete raw source media this long after its clips render

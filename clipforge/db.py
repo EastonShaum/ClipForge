@@ -55,7 +55,8 @@ def tx(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
 
 # Columns added after a table first shipped. CREATE TABLE IF NOT EXISTS won't add them to an
 # existing DB, so add any that are missing. Additive only: never drop or retype.
-ADDED_COLUMNS = [("campaigns", "logo_path", "TEXT"), ("posts", "submitted_at", "TEXT")]
+ADDED_COLUMNS = [("campaigns", "logo_path", "TEXT"), ("posts", "submitted_at", "TEXT"),
+                 ("campaigns", "media_folder", "TEXT")]
 
 
 def init_db(path: Path | None = None) -> None:

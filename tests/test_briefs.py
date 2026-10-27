@@ -21,7 +21,7 @@ def test_brief_upload_read_and_apply(client, conn, tmp_path):
         "/campaigns/1/docs", files=[("docs", ("b.png", _png(tmp_path), "image/png"))]).text
 
     run_local(["brief"], once=True, idle_s=0)
-    page = client.get("/campaigns").text
+    page = client.get("/campaigns/1").text
     assert "Playmaker logos must be clearly visible" in page and "No profanity in the hook" in page
 
     r = client.post("/campaigns/1/docs/apply")

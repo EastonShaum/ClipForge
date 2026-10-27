@@ -1,6 +1,7 @@
 .env
 .venv/
 data/
+Campaigns/
 __pycache__/
 *.pyc
 .pytest_cache/

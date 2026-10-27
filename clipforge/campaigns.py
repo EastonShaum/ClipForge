@@ -2,6 +2,7 @@
 
 import hashlib
 import re
+import shutil
 import sqlite3
 import subprocess
 import tempfile
@@ -10,6 +11,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from clipforge.config import get_settings
+from clipforge.db import tx
 from clipforge.tools import ffmpeg
 
 
@@ -30,6 +32,7 @@ class CampaignIn(BaseModel):
     end_date: str | None = None
     notes: str = ""
     status: str = Field(default="active")
+    media_folder: str | None = None  # under the media library; defaults to folder_name(name)
 
 
 def effective_per_1k(rate_usd: float, rate_per_views: int) -> float:
@@ -49,11 +52,18 @@ def blocked_reason(c: CampaignIn) -> str | None:
     return None
 
 
+def folder_name(name: str) -> str:
+    """A campaign's footage folder: its name minus characters Windows forbids in file names."""
+    clean = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "", name).strip().rstrip(". ")
+    return clean[:80] or "campaign"
+
+
 def add_campaign(conn: sqlite3.Connection, c: CampaignIn, *, force: bool = False) -> int:
     reason = blocked_reason(c)
     if reason and not force:
         raise ValueError(f"Campaign rejected by blocklist ({reason}). Use force to override.")
     data = c.model_dump()
+    data["media_folder"] = data["media_folder"] or folder_name(c.name)
     cols = ",".join(data)
     cur = conn.execute(
         f"INSERT INTO campaigns ({cols}) VALUES ({','.join('?' * len(data))})",
@@ -135,3 +145,50 @@ def estimate_payout(campaign: dict, views: int) -> float:
     pay = views / 1000 * campaign["per_1k"]
     cap = campaign.get("cap_usd")
     return min(pay, cap) if cap else pay
+
+
+def delete_campaign(conn: sqlite3.Connection, campaign_id: int) -> dict:
+    """Delete a campaign with its sources, clips, posts, views, jobs and stored files. Your own
+    footage files (local paths) are never touched; only ClipForge's copies and renders are.
+    API cost rows stay: that money was spent. Refuses while a job for it is running."""
+    s = get_settings()
+    sids = [r[0] for r in conn.execute("SELECT id FROM sources WHERE campaign_id=?",
+                                       (campaign_id,))]
+    marks = ",".join("?" * len(sids)) or "NULL"
+    if conn.execute(f"SELECT 1 FROM jobs WHERE state='running' AND source_id IN ({marks})",
+                    sids).fetchone():
+        raise ValueError("A job for this campaign is running; try again when it finishes")
+    cands = f"SELECT id FROM candidates WHERE source_id IN ({marks})"
+    clips = f"SELECT id FROM clips WHERE candidate_id IN ({cands})"
+    posts = f"SELECT id FROM posts WHERE clip_id IN ({clips})"
+    counts = {
+        "sources": len(sids),
+        "clips": conn.execute(f"SELECT COUNT(*) FROM ({clips})", sids).fetchone()[0],
+        "posts": conn.execute(f"SELECT COUNT(*) FROM ({posts})", sids).fetchone()[0],
+    }
+    row = conn.execute("SELECT logo_path FROM campaigns WHERE id=?", (campaign_id,)).fetchone()
+    docs = [r[0] for r in conn.execute("SELECT path FROM campaign_docs WHERE campaign_id=?",
+                                       (campaign_id,))]
+    doc_ids = [r[0] for r in conn.execute("SELECT id FROM campaign_docs WHERE campaign_id=?",
+                                          (campaign_id,))]
+    with tx(conn):
+        conn.execute(f"DELETE FROM view_snapshots WHERE post_id IN ({posts})", sids)
+        conn.execute(f"DELETE FROM posts WHERE clip_id IN ({clips})", sids)
+        conn.execute(f"DELETE FROM reviews WHERE clip_id IN ({clips})", sids)
+        conn.execute(f"DELETE FROM jobs WHERE source_id IN ({marks}) OR candidate_id IN"
+                     f" ({cands})", [*sids, *sids])
+        conn.execute(f"DELETE FROM clips WHERE candidate_id IN ({cands})", sids)
+        conn.execute(f"DELETE FROM candidates WHERE source_id IN ({marks})", sids)
+        conn.execute(f"DELETE FROM transcripts WHERE source_id IN ({marks})", sids)
+        conn.execute(f"DELETE FROM sources WHERE id IN ({marks})", sids)
+        for d in doc_ids:
+            conn.execute("DELETE FROM jobs WHERE dedupe_key=?", (f"brief:{d}",))
+        conn.execute("DELETE FROM campaign_docs WHERE campaign_id=?", (campaign_id,))
+        conn.execute("DELETE FROM campaigns WHERE id=?", (campaign_id,))
+    for sid in sids:  # renders and downloads ClipForge made; never the user's own files
+        for d in (s.clips_dir / str(sid), s.raw_dir / str(sid)):
+            if d.is_dir():
+                shutil.rmtree(d, ignore_errors=True)
+    for rel in [*logo_list(row["logo_path"] if row else None), *docs]:
+        (s.assets_dir / rel).unlink(missing_ok=True)
+    return counts

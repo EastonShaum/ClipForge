@@ -203,3 +203,17 @@ CREATE TABLE IF NOT EXISTS campaign_docs (
     created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
     UNIQUE (campaign_id, sha)
 );
+
+-- Media files a worker found in its media_library_dir (one folder per campaign). Replaced
+-- wholesale on every report from that host.
+CREATE TABLE IF NOT EXISTS library_files (
+    host            TEXT NOT NULL,
+    path            TEXT NOT NULL,                          -- absolute path on that host
+    rel             TEXT NOT NULL,                          -- relative to the library, '/' separated
+    folder          TEXT NOT NULL,                          -- first segment of rel ('' = top level)
+    size            INTEGER NOT NULL,
+    mtime           REAL NOT NULL,                          -- unix seconds
+    duration_s      REAL,
+    seen_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    PRIMARY KEY (host, path)
+);
