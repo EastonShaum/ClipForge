@@ -50,7 +50,7 @@ td.n, th.n { text-align: right; font-variant-numeric: tabular-nums }
 .bar.warn i { background: var(--warn) } .bar.paused i { background: var(--bad) }
 .status-failed { color: var(--bad); font-weight: 700 } .status-rendered { color: var(--accent); font-weight: 700 }
 .empty { text-align: center; padding: 40px 16px; color: var(--muted) }
-.logo-thumb { width: 40px; height: 40px; object-fit: contain; border-radius: 6px; background: var(--chip) }
+.logo-thumb { width: 40px; height: 40px; object-fit: contain; border-radius: 6px; background: #3a414c }
 .reject { display: grid; gap: 10px }
 .pick { display: inline-block; font-size: 13px; color: var(--fg) }
 .pick input { position: absolute; opacity: 0; width: 1px; height: 1px }

@@ -15,8 +15,15 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from clipforge import analytics, costs, jobqueue, pipeline
-from clipforge.campaigns import CampaignIn, add_campaign, clear_logo, list_campaigns, set_logo
+from clipforge import analytics, costs, jobqueue, pipeline, scout
+from clipforge.campaigns import (
+    CampaignIn,
+    add_campaign,
+    add_logo,
+    list_campaigns,
+    logo_list,
+    remove_logo,
+)
 from clipforge.captions import PLATFORM_REMINDER
 from clipforge.config import get_settings
 from clipforge.db import connect, init_db, tx, utcnow
@@ -24,6 +31,7 @@ from clipforge.feedback import REJECT_REASONS
 from clipforge.ingest import add_source, remote_hosts
 from clipforge.select_prompts import sync_prompts
 from clipforge.stages.fetch import dir_size_gb, free_gb
+from clipforge.stages.scout import NotAnImage, prepare_image
 from clipforge.update import code_zip, repo_version
 from clipforge.worker import WORKER_PROTOCOL
 
@@ -32,11 +40,13 @@ HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=HERE / "templates")
 templates.env.filters["money"] = lambda v: f"${v or 0:,.2f}"
 templates.env.filters["num"] = lambda v: f"{v or 0:,}"
+templates.env.filters["logos"] = logo_list
 templates.env.filters["pct"] = lambda v: "—" if v is None else f"{v * 100:.0f}%"
 templates.env.filters["secs"] = lambda ms: f"{(ms or 0) / 1000:.0f}s"
 templates.env.filters["mmss"] = lambda ms: f"{(ms or 0) // 60000}:{(ms or 0) // 1000 % 60:02d}"
 
 PLATFORMS = ["tiktok", "youtube", "instagram", "x"]
+MAX_SHOT_BYTES = 15_000_000
 
 
 def create_app() -> FastAPI:
@@ -195,7 +205,62 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
     # ---------- campaigns & sources ----------
     @app.get("/campaigns")
     def campaigns(request: Request, conn: DB, msg: str = ""):
-        return page(request, "campaigns.html", campaigns=list_campaigns(conn), msg=msg)
+        # Query params pre-fill the Add form (the Scout page's "Add as campaign" link).
+        prefill = {k: v for k, v in request.query_params.items() if k != "msg"}
+        return page(request, "campaigns.html", campaigns=list_campaigns(conn), msg=msg,
+                    prefill=prefill)
+
+    # ---------- scouting ----------
+    @app.get("/scout")
+    def scout_page(request: Request, conn: DB, msg: str = ""):
+        shots = conn.execute(
+            """SELECT sh.*, j.state, j.last_error, COUNT(b.id) n
+               FROM scout_shots sh LEFT JOIN jobs j ON j.dedupe_key='scout:'||sh.id
+               LEFT JOIN scout_bounties b ON b.shot_id=sh.id
+               GROUP BY sh.id ORDER BY sh.id DESC LIMIT 40""").fetchall()
+        pending = sum(1 for r in shots if r["state"] in ("queued", "running"))
+        return page(request, "scout.html", ranked=scout.ranked(conn), shots=shots,
+                    pending=pending, msg=msg)
+
+    @app.post("/scout/upload")
+    async def scout_upload(conn: DB, shots: list[UploadFile] = File(...)):
+        added = skipped = 0
+        for f in shots[:30]:
+            data = await f.read(MAX_SHOT_BYTES + 1)
+            if not data or len(data) > MAX_SHOT_BYTES:
+                skipped += 1
+                continue
+            try:
+                sha, path = prepare_image(data, s.assets_dir / "scout")
+            except NotAnImage:
+                skipped += 1
+                continue
+            with tx(conn):
+                cur = conn.execute("INSERT INTO scout_shots (sha, path) VALUES (?,?)"
+                                   " ON CONFLICT(sha) DO NOTHING",
+                                   (sha, str(path.relative_to(s.assets_dir))))
+                if cur.rowcount:
+                    jobqueue.enqueue(conn, "scout", f"scout:{cur.lastrowid}",
+                                     affinity_host=s.host_name, priority=50)
+                    added += 1
+                else:
+                    skipped += 1
+        if not added:
+            return back("/scout", "Nothing new: already uploaded, or not an image")
+        msg = f"Reading {added} screenshot(s); Discord pings when done"
+        return back("/scout", msg + (f" ({skipped} skipped: duplicate or not an image)"
+                                     if skipped else ""))
+
+    @app.post("/scout/shots/{shot_id}/delete")
+    def scout_delete(shot_id: int, conn: DB):
+        row = conn.execute("SELECT path FROM scout_shots WHERE id=?", (shot_id,)).fetchone()
+        if row:
+            with tx(conn):
+                conn.execute("DELETE FROM scout_bounties WHERE shot_id=?", (shot_id,))
+                conn.execute("DELETE FROM jobs WHERE dedupe_key=?", (f"scout:{shot_id}",))
+                conn.execute("DELETE FROM scout_shots WHERE id=?", (shot_id,))
+            (s.assets_dir / row["path"]).unlink(missing_ok=True)
+        return back("/scout", "Screenshot and its bounties removed")
 
     @app.post("/campaigns")
     async def create_campaign(request: Request, conn: DB):
@@ -223,14 +288,14 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
     @app.post("/campaigns/{cid}/logo")
     async def campaign_logo(cid: int, conn: DB, logo: UploadFile = File(...)):
         try:
-            set_logo(conn, cid, await logo.read())
+            add_logo(conn, cid, await logo.read())
         except ValueError as e:
             return back("/campaigns", str(e))
-        return back("/campaigns", "Logo saved. New renders will include it.")
+        return back("/campaigns", "Logo added. New renders will include it.")
 
     @app.post("/campaigns/{cid}/logo/remove")
-    def campaign_logo_remove(cid: int, conn: DB):
-        clear_logo(conn, cid)
+    def campaign_logo_remove(cid: int, conn: DB, rel: str = Form("")):
+        remove_logo(conn, cid, rel or None)
         return back("/campaigns", "Logo removed")
 
     @app.get("/sources")

@@ -27,7 +27,8 @@ ALL_KINDS = ["fetch", "transcribe", "select", "render"]
 # Bump when a remote worker must understand something new in a job context. The Pi refuses
 # older workers, so an outdated laptop can't quietly render clips without a required logo.
 # 2: campaign logos (ctx.logo_rel) and local-file sources.
-WORKER_PROTOCOL = 2
+# 3: several logos per campaign (ctx.logo_rels), drawn as a row under the captions.
+WORKER_PROTOCOL = 3
 _stop = False
 
 
@@ -143,8 +144,8 @@ def run_remote(base_url: str, kinds: list[str], idle_s: float = 10.0):
         job, ctx = claimed["job"], claimed["ctx"]
         log.info("claimed job %s %s", job["id"], job["kind"])
         try:
-            if ctx.get("logo_rel"):
-                client.fetch_asset(ctx["logo_rel"], s.assets_dir / ctx["logo_rel"])
+            for rel in ctx.get("logo_rels", []):
+                client.fetch_asset(rel, s.assets_dir / rel)
             with tempfile.TemporaryDirectory() as tmp:
                 result = pipeline.run_handler(s, job["kind"], ctx, out_dir=Path(tmp))
                 upload = Path(result.pop("path")) if job["kind"] == "render" else None

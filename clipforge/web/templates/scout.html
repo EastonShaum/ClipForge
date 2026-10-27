@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Scout · ClipForge{% endblock %}
+{% block content %}
+{% if pending %}<meta http-equiv="refresh" content="10">{% endif %}
+<h1>Scout <span class="muted">which bounties to clip</span></h1>
+
+<form method="post" action="/scout/upload" enctype="multipart/form-data" class="card">
+  <div class="small muted">Screenshot the campaign pages (whole bounty cards in view), then upload them here. Each one costs well under a cent to read.</div>
+  <input type="file" name="shots" accept="image/*" multiple required>
+  <button class="go big">Upload screenshots</button>
+</form>
+
+{% if pending %}<div class="card small">Reading {{ pending }} screenshot(s)… this page refreshes itself.</div>{% endif %}
+
+{% for b in ranked.open %}
+<article class="card">
+  <div class="row">
+    <span class="score">{{ "%.0f"|format(b.score) }}</span>
+    <b>{{ b.campaign }}</b>{% if b.bounty %}<span class="muted">· {{ b.bounty }}</span>{% endif %}
+    <span class="chip">{{ b.category }}</span><span class="chip">{{ b.payout }}</span>
+  </div>
+  <div class="row small">
+    {% if b.kind == 'pot' %}<b>{{ b.pot_usd|money if b.pot_usd is not none else '?' }} pot</b>{% if b.min_views %}<span>min {{ b.min_views|num }} views</span>{% endif %}
+    {% elif b.per_100k is not none %}<b>${{ "%.0f"|format(b.per_100k) }} / 100K views</b>{% endif %}
+    {% if b.clips %}<span>{{ b.clips|num }} clips · {{ (b.views or 0)|num }} views</span>{% endif %}
+    {% if b.avg_views %}<span class="muted">~{{ b.avg_views|num }} views/clip</span>{% endif %}
+  </div>
+  {% if b.filled_pct is not none %}
+  <div class="bar {{ 'paused' if b.filled_pct >= 90 else 'warn' if b.filled_pct >= 60 }}"><i style="width:{{ b.filled_pct }}%"></i></div>
+  <div class="small">{{ "%.0f"|format(b.filled_pct) }}% filled
+    {% if b.speed is not none %} · +{{ "%.1f"|format(b.speed) }}%/day{% if b.days_left is not none %}, full in ~{{ "%.0f"|format(b.days_left) }} days{% endif %}
+    {% elif b.readings < 2 %}<span class="muted"> · upload again tomorrow to see how fast it fills</span>{% endif %}</div>
+  {% endif %}
+  {% if b.why %}<div class="small" style="color:var(--warn)">{{ b.why|join(' · ') }}</div>{% endif %}
+  {% if b.notes %}<div class="small muted">{{ b.notes }}</div>{% endif %}
+  <div class="row small">
+    <span class="muted">seen {{ b.seen_at[:10] }}</span>
+    <a class="btn small" href="/campaigns?name={{ (b.campaign ~ (' – ' ~ b.bounty if b.bounty else ''))|urlencode }}&category={{ b.category if b.category in ['podcast','interview','gaming'] else 'other' }}{% if b.kind == 'rate' and b.rate_usd is not none %}&rate_usd={{ b.rate_usd }}&rate_mode={{ b.rate_per_views }}{% endif %}&notes={{ ('from Scout, payout ' ~ b.payout)|urlencode }}#add">Add as campaign</a>
+  </div>
+</article>
+{% else %}
+{% if not pending %}<div class="card empty">No bounties yet. Upload a few screenshots of the campaign pages.</div>{% endif %}
+{% endfor %}
+
+{% if ranked.other %}
+<details class="card">
+  <summary>Ended, disabled or blocked ({{ ranked.other|length }})</summary>
+  <ul class="small">{% for b in ranked.other %}
+    <li>{{ b.campaign }}{% if b.bounty %} · {{ b.bounty }}{% endif %}: {{ b.blocked or b.status }}</li>
+  {% endfor %}</ul>
+</details>
+{% endif %}
+
+{% if shots %}
+<details class="card">
+  <summary>Screenshots ({{ shots|length }})</summary>
+  <div class="small muted">Wrong numbers? Check the screenshot; delete it and re-upload a clearer one.</div>
+  {% for sh in shots %}
+  <div class="row small">
+    <a href="/media/assets/{{ sh.path }}" target="_blank" rel="noopener"><img src="/media/assets/{{ sh.path }}" alt="screenshot {{ sh.id }}" class="logo-thumb"></a>
+    <span>{{ sh.created_at[:16]|replace('T', ' ') }} UTC · {{ sh.n }} bounties ·
+      {% if sh.state == 'done' %}read{% elif sh.state in ('queued','running') %}reading…{% else %}<span class="status-failed">{{ sh.state }}</span>{% endif %}</span>
+    {% if sh.last_error and sh.state != 'done' %}<span class="muted">{{ sh.last_error[:120] }}</span>{% endif %}
+    <form method="post" action="/scout/shots/{{ sh.id }}/delete"><button class="small">Delete</button></form>
+  </div>
+  {% endfor %}
+</details>
+{% endif %}
+{% endblock %}

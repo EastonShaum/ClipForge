@@ -10,19 +10,21 @@ import logging
 import sqlite3
 from pathlib import Path
 
-from clipforge import costs, jobqueue, notify
+from clipforge import costs, jobqueue, notify, scout
+from clipforge.campaigns import logo_list
 from clipforge.captions import build_caption
 from clipforge.config import Settings, get_settings
 from clipforge.db import tx, utcnow
 from clipforge.feedback import build_feedback, pick_prompt_version
 from clipforge.stages import fetch as fetch_stage
 from clipforge.stages import render as render_stage
+from clipforge.stages import scout as scout_stage
 from clipforge.stages import select as select_stage
 from clipforge.stages import transcribe as transcribe_stage
 
 log = logging.getLogger(__name__)
 
-PAID_STAGES = {"transcribe", "select"}
+PAID_STAGES = {"transcribe", "select", "scout"}
 
 
 class Deferred(Exception):
@@ -82,8 +84,21 @@ def build_context(conn: sqlite3.Connection, s: Settings, job: sqlite3.Row) -> di
                 "media_path": src["media_path"], "words": words,
                 "start_ms": cand["start_ms"], "end_ms": cand["end_ms"],
                 "hook": cand["hook_text"], "out_rel": f"{src['id']}/c{cand['id']}.mp4",
-                "disclosure": src["disclosure"], "logo_rel": src["logo_path"]}
+                "disclosure": src["disclosure"], "logo_rels": logo_list(src["logo_path"])}
+    if kind == "scout":
+        shot = _shot(conn, job)
+        try:
+            costs.check_budget(conn, scout_stage.estimate_usd(s))
+        except costs.BudgetExceeded as e:
+            raise Deferred(str(e), 6 * 3600) from e
+        return {"shot_id": shot["id"], "image_rel": shot["path"]}
     raise ValueError(f"unknown job kind {kind}")
+
+
+def _shot(conn, job: sqlite3.Row) -> sqlite3.Row:
+    """Scout jobs carry their screenshot id in the dedupe key: scout:<shot_id>."""
+    shot_id = int(job["dedupe_key"].split(":")[1])
+    return conn.execute("SELECT * FROM scout_shots WHERE id=?", (shot_id,)).fetchone()
 
 
 def run_handler(s: Settings, kind: str, ctx: dict, out_dir: Path | None = None) -> dict:
@@ -103,7 +118,10 @@ def run_handler(s: Settings, kind: str, ctx: dict, out_dir: Path | None = None) 
                                        start_ms=ctx["start_ms"], end_ms=ctx["end_ms"],
                                        hook=ctx["hook"], out_path=out, work=work,
                                        disclosure=_onscreen_disclosure(ctx.get("disclosure")),
-                                       logo_path=_logo(s, ctx.get("logo_rel")))
+                                       logo_paths=_logos(s, ctx.get("logo_rels", [])))
+        if kind == "scout":
+            bounties, meta = scout_stage.read_screenshot(s, s.assets_dir / ctx["image_rel"])
+            return {"shot_id": ctx["shot_id"], "bounties": bounties, "meta": meta}
     except fetch_stage.DiskFull as e:
         raise Deferred(str(e), 1800) from e
     except transcribe_stage.MissingKey as e:
@@ -113,14 +131,13 @@ def run_handler(s: Settings, kind: str, ctx: dict, out_dir: Path | None = None) 
     raise ValueError(f"unknown job kind {kind}")
 
 
-def _logo(s: Settings, rel: str | None) -> str | None:
-    """A campaign's logo is a requirement, so a missing file is an error, never a silent skip."""
-    if not rel:
-        return None
-    p = s.assets_dir / rel
-    if not p.is_file():
-        raise FileNotFoundError(f"campaign logo {rel} missing on this machine")
-    return str(p)
+def _logos(s: Settings, rels: list[str]) -> list[str]:
+    """Campaign logos are requirements, so a missing file is an error, never a silent skip."""
+    paths = [s.assets_dir / rel for rel in rels]
+    for rel, p in zip(rels, paths, strict=True):
+        if not p.is_file():
+            raise FileNotFoundError(f"campaign logo {rel} missing on this machine")
+    return [str(p) for p in paths]
 
 
 def _onscreen_disclosure(text: str | None) -> str:
@@ -210,9 +227,17 @@ def apply_result(conn: sqlite3.Connection, s: Settings, job: sqlite3.Row, result
                 (cand["id"], result["rel_path"], result["size_bytes"], result["render_s"], host,
                  caption),
             )
+        elif kind == "scout":
+            meta = result["meta"]
+            n = scout.store(conn, result["shot_id"], result["bounties"])
+            costs.record(conn, provider=meta["provider"], model=meta["model"], stage="scout",
+                         units=f"{meta.get('tokens_in', 0)} in, {meta.get('tokens_out', 0)} out"
+                               f" ({n} bounties)", usd=meta.get("usd", 0.0))
         jobqueue.complete(conn, job["id"])
     if kind == "render":
         _maybe_finish_source(conn, s, job["source_id"])
+    if kind == "scout":
+        _maybe_finish_scout(conn, s)
 
 
 def _maybe_finish_source(conn: sqlite3.Connection, s: Settings, sid: int) -> None:
@@ -233,6 +258,14 @@ def _maybe_finish_source(conn: sqlite3.Connection, s: Settings, sid: int) -> Non
     src = _source(conn, sid)
     notify.discord(f"🎬 **{n} new clips ready** from *{src['title'] or src['url']}* "
                    f"({src['campaign_name']})\n{s.public_base_url}/review")
+
+
+def _maybe_finish_scout(conn: sqlite3.Connection, s: Settings) -> None:
+    """One Discord summary per upload batch: sent when the last screenshot is read."""
+    pending = conn.execute("SELECT COUNT(*) n FROM jobs WHERE kind='scout' AND state IN"
+                           " ('queued','running')").fetchone()["n"]
+    if not pending:
+        notify.discord(scout.summary(conn, s.public_base_url))
 
 
 def mark_failed_source(conn: sqlite3.Connection, job: sqlite3.Row, error: str) -> None:

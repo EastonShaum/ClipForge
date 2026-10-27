@@ -161,3 +161,33 @@ CREATE TABLE IF NOT EXISTS settings_kv (
     key             TEXT PRIMARY KEY,
     value           TEXT NOT NULL
 );
+
+-- Campaign scouting: marketplace screenshots you upload, and the bounties read off them.
+CREATE TABLE IF NOT EXISTS scout_shots (
+    id              INTEGER PRIMARY KEY,
+    sha             TEXT NOT NULL UNIQUE,                   -- same image twice = one row
+    path            TEXT NOT NULL,                          -- relative to assets_dir
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+
+CREATE TABLE IF NOT EXISTS scout_bounties (
+    id              INTEGER PRIMARY KEY,
+    shot_id         INTEGER NOT NULL REFERENCES scout_shots(id),
+    key             TEXT NOT NULL,                          -- normalized campaign|bounty
+    campaign        TEXT NOT NULL,
+    bounty          TEXT NOT NULL DEFAULT '',
+    status          TEXT NOT NULL DEFAULT 'unknown',
+    kind            TEXT NOT NULL DEFAULT 'rate',           -- rate | pot
+    rate_usd        REAL,
+    rate_per_views  INTEGER,
+    pot_usd         REAL,
+    min_views       INTEGER,
+    filled_pct      REAL,
+    clips           INTEGER,
+    views           INTEGER,
+    payout          TEXT NOT NULL DEFAULT 'unknown',
+    category        TEXT NOT NULL DEFAULT 'other',
+    notes           TEXT NOT NULL DEFAULT '',
+    seen_at         TEXT NOT NULL                           -- when the screenshot was uploaded
+);
+CREATE INDEX IF NOT EXISTS scout_bounties_key ON scout_bounties (key, seen_at);

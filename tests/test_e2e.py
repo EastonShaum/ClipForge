@@ -3,7 +3,7 @@ review → approve → log post → views → dashboard. Offline: fake transcrib
 
 from pathlib import Path
 
-from clipforge.worker import run_local
+from clipforge.worker import WORKER_PROTOCOL, run_local
 
 FIXTURE = Path(__file__).parent / "fixtures" / "sample.mp4"
 
@@ -92,7 +92,7 @@ def test_worker_api_requires_token_and_round_trips(client, conn):
     h = {"Authorization": "Bearer test-token"}
     r = client.post("/api/worker/claim", headers=h,
                     json={"worker": "laptop-remote-1", "host": "laptop", "kinds": ["fetch"],
-                          "protocol": 2})
+                          "protocol": WORKER_PROTOCOL})
     assert r.status_code == 200
     job = r.json()["job"]
     r = client.post(f"/api/worker/jobs/{job['id']}/result", headers=h,

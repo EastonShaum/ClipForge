@@ -85,9 +85,15 @@ def get_campaign(conn: sqlite3.Connection, campaign_id: int) -> dict | None:
 LOGO_STORE_W = 480  # stored size; render scales down further. Keeps transfers to the laptop small.
 
 
-def set_logo(conn: sqlite3.Connection, campaign_id: int, data: bytes) -> str:
-    """Store a campaign's required logo (any image ffmpeg reads) as a shrunk PNG with alpha.
-    The file name carries a content hash, so a replaced logo never hits a stale laptop cache."""
+def logo_list(value: str | None) -> list[str]:
+    """campaigns.logo_path holds every required logo, comma-separated, in display order."""
+    return [v for v in (value or "").split(",") if v]
+
+
+def add_logo(conn: sqlite3.Connection, campaign_id: int, data: bytes) -> str:
+    """Store a required logo (any image ffmpeg reads) as a shrunk PNG with alpha and append it to
+    the campaign's logos. The file name carries a content hash, so a replaced logo never hits a
+    stale laptop cache."""
     if not conn.execute("SELECT 1 FROM campaigns WHERE id=?", (campaign_id,)).fetchone():
         raise ValueError(f"campaign {campaign_id} not found")
     s = get_settings()
@@ -105,12 +111,21 @@ def set_logo(conn: sqlite3.Connection, campaign_id: int, data: bytes) -> str:
         if r.returncode:
             raise ValueError(f"not a readable image: {r.stderr.strip()[:200]}")
         part.replace(dest)
-    conn.execute("UPDATE campaigns SET logo_path=? WHERE id=?", (rel, campaign_id))
+    have = logo_list(conn.execute("SELECT logo_path FROM campaigns WHERE id=?",
+                                  (campaign_id,)).fetchone()[0])
+    if rel not in have:
+        conn.execute("UPDATE campaigns SET logo_path=? WHERE id=?",
+                     (",".join([*have, rel]), campaign_id))
     return rel
 
 
-def clear_logo(conn: sqlite3.Connection, campaign_id: int) -> None:
-    conn.execute("UPDATE campaigns SET logo_path=NULL WHERE id=?", (campaign_id,))
+def remove_logo(conn: sqlite3.Connection, campaign_id: int, rel: str | None = None) -> None:
+    """Drop one logo, or all of them when rel is None."""
+    have = logo_list(conn.execute("SELECT logo_path FROM campaigns WHERE id=?",
+                                  (campaign_id,)).fetchone()[0])
+    keep = [r for r in have if rel is not None and r != rel]
+    conn.execute("UPDATE campaigns SET logo_path=? WHERE id=?",
+                 (",".join(keep) or None, campaign_id))
 
 
 def estimate_payout(campaign: dict, views: int) -> float:

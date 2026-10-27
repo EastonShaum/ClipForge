@@ -77,10 +77,11 @@ def campaign_add(
 
 @campaign_app.command("logo")
 def campaign_logo(campaign_id: int, image: Path):
-    """Set the logo a campaign requires in every clip (PNG with transparency works best)."""
-    from clipforge.campaigns import set_logo
+    """Add a logo the campaign requires in every clip (PNG with transparency works best).
+    Several logos are drawn side by side, in the order added."""
+    from clipforge.campaigns import add_logo
 
-    rel = set_logo(_init(), campaign_id, image.read_bytes())
+    rel = add_logo(_init(), campaign_id, image.read_bytes())
     typer.echo(f"campaign #{campaign_id} logo -> {rel}")
 
 
@@ -137,7 +138,7 @@ def serve(host: str | None = None, port: int | None = None):
 
 @app.command()
 def worker(
-    kinds: Annotated[str, typer.Option(help="Comma list of fetch,transcribe,select,render")] =
+    kinds: Annotated[str, typer.Option(help="Comma list of fetch,transcribe,select,render,scout")] =
     "fetch,transcribe,select,render",
     label: str = "main",
     once: Annotated[bool, typer.Option(help="Exit when the queue is empty")] = False,

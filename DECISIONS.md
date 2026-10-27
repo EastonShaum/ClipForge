@@ -141,3 +141,16 @@ A webhook is a URL you create in channel settings. It can only post into that on
   - Each reminder fires once (a `settings_kv` key). A slot missed by more than 2 h is dropped, so a reboot doesn't replay old pings.
 - **Timing:** slot times are a starting point, not a science. Sprout Social's 2026 data puts TikTok's best window at Tue–Fri 2–6 pm local. A new account's first views come from a test audience, so consistency matters more than the minute. Re-tune from your own analytics after ~30 posts.
 - **Rejected:** scheduling the posts themselves (no automated posting, hard constraint 2).
+
+## D23. Campaign logos are a row under the captions, and a campaign can have several
+- **Why:** Man On requires the Man On logo *and* the Playmaker wordmark. The footage also carries its own Playmaker mark in the top-right corner, which the D19 "TV bug" placement covered.
+- **How:** `campaigns.logo_path` holds every logo, comma-separated, in display order (`logo_list()`). The renderer scales each to 120 px tall and lines them up side by side on a 55% black strip at y≈1300–1444. That's the blurred band under the captions, centered on the caption column and above TikTok's bottom UI. The strip keeps white logos readable on any background.
+- **Worker protocol 3:** ctx carries `logo_rels` (a list). Older laptops get 426 and self-update.
+- **Rejected:** stacking logos in the top-right of the picture (hides the footage's own marks and fights the hook box); a per-logo position setting (nothing needs it yet).
+
+## D24. Scout: rank bounties from screenshots you upload
+- **Why:** choosing the right bounty matters more than any render setting, and Clipping.net can't be fetched (Vercel bot check, which we don't bypass). Screenshots taken by hand are allowed and contain everything on the campaign page.
+- **How:** the Scout page takes many screenshots at once from the phone. Each is shrunk to ≤1568 px JPEG (named by hash, so duplicates are ignored) and becomes a `scout:<id>` job on the Pi. Haiku reads the bounty cards into fixed fields; cards cut off at the edge are skipped. That costs about $0.0008 per screenshot, logged in `api_costs` and subject to the budget cap.
+- **Ranking** (`clipforge/scout.py`), a plain formula: pay rate 40 + budget left 35 + content fit 15 + PayPal 10. Pot bounties score low on pay. Gambling is blocked; ended and disabled bounties are listed apart. Uploading again a day later gives the fill speed in %/day and a "full in ~N days" estimate, with −15 if a bounty will close within 2 days.
+- **Schema note:** the extraction model has no Optional fields (structured outputs rejected the schema as too complex); numbers use −1 for "not shown".
+- **Not automated:** nothing visits Clipping.net and nothing adds a campaign by itself. "Add as campaign" only pre-fills the form.

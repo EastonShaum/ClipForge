@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from clipforge import jobqueue
-from clipforge.campaigns import set_logo
+from clipforge.campaigns import add_logo
 from clipforge.db import connect, init_db
 from clipforge.ingest import add_source, source_key
 from clipforge.stages.fetch import fetch, local_path
@@ -72,20 +72,20 @@ def _pixel(video: Path, t: float, x: int, y: int) -> tuple[int, int, int]:
 
 
 def test_logo_is_shrunk_and_burned_into_every_clip(conn, campaign_id, settings, tmp_path):
-    from clipforge.stages.render import LOGO_W, LOGO_X_MARGIN, LOGO_Y
+    from clipforge.stages.render import CAPTION_X, LOGO_H, LOGO_PAD, LOGO_Y
 
-    rel = set_logo(conn, campaign_id, _red_png(tmp_path / "logo.png"))
+    rel = add_logo(conn, campaign_id, _red_png(tmp_path / "logo.png"))
     stored = settings.assets_dir / rel
     assert stored.is_file() and rel.startswith(f"logos/c{campaign_id}-")
     with pytest.raises(ValueError, match="not a readable image"):
-        set_logo(conn, campaign_id, b"not an image")
+        add_logo(conn, campaign_id, b"not an image")
 
     add_source(conn, campaign_id, str(FIXTURE.resolve()))
     run_local(["fetch", "transcribe", "select", "render"], once=True, idle_s=0)
     clip = conn.execute("SELECT path FROM clips LIMIT 1").fetchone()
     assert clip, conn.execute("SELECT last_error FROM jobs WHERE last_error IS NOT NULL").fetchall()
     video = settings.clips_dir / clip["path"]
-    cx, cy = 1080 - LOGO_X_MARGIN - LOGO_W // 2, LOGO_Y + LOGO_W // 2
+    cx, cy = CAPTION_X, LOGO_Y + LOGO_PAD[1] + LOGO_H // 2
     for t in (0.5, 6.0):  # present for the whole clip, not just the first frame
         r, g, b = _pixel(video, t, cx, cy)
         assert r > 200 and g < 60 and b < 60, (t, r, g, b)
@@ -93,7 +93,7 @@ def test_logo_is_shrunk_and_burned_into_every_clip(conn, campaign_id, settings, 
 
 def test_missing_logo_fails_the_render_instead_of_skipping(conn, campaign_id, settings,
                                                            tmp_path):
-    rel = set_logo(conn, campaign_id, _red_png(tmp_path / "logo.png"))
+    rel = add_logo(conn, campaign_id, _red_png(tmp_path / "logo.png"))
     (settings.assets_dir / rel).unlink()
     add_source(conn, campaign_id, str(FIXTURE.resolve()))
     run_local(["fetch", "transcribe", "select", "render"], once=True, idle_s=0)
@@ -103,7 +103,7 @@ def test_missing_logo_fails_the_render_instead_of_skipping(conn, campaign_id, se
 
 
 def test_asset_api_requires_token_and_stays_in_assets(conn, campaign_id, tmp_path):
-    rel = set_logo(conn, campaign_id, _red_png(tmp_path / "logo.png"))
+    rel = add_logo(conn, campaign_id, _red_png(tmp_path / "logo.png"))
     client = TestClient(create_app())
     assert client.get(f"/api/worker/assets/{rel}").status_code == 401
     r = client.get(f"/api/worker/assets/{rel}", headers=H)
@@ -121,13 +121,13 @@ def test_outdated_remote_worker_is_refused(conn):
 
 
 def test_render_context_carries_logo_for_remote_worker(conn, campaign_id, tmp_path):
-    rel = set_logo(conn, campaign_id, _red_png(tmp_path / "logo.png"))
+    rel = add_logo(conn, campaign_id, _red_png(tmp_path / "logo.png"))
     jobqueue.heartbeat(conn, "eastons-laptop-remote-42", ["fetch", "transcribe", "render"])
     client = TestClient(create_app())
     client.post("/sources", data={"campaign_id": str(campaign_id), "urls": WIN})
     r = client.post("/api/worker/claim", headers=H, json={
         "worker": "eastons-laptop-remote-42", "host": "eastons-laptop", "kinds": ["fetch"],
-        "protocol": 2})
+        "protocol": 3})
     assert r.status_code == 200 and r.json()["ctx"]["url"] == WIN
     # Skip ahead to a render job for this source and check its context.
     from clipforge.pipeline import build_context
@@ -138,7 +138,7 @@ def test_render_context_carries_logo_for_remote_worker(conn, campaign_id, tmp_pa
                        " score, rank, kept) VALUES (?,0,9000,'h','other',1,1,1)",
                        (sid,)).lastrowid
     ctx = build_context(conn, None, {"kind": "render", "candidate_id": cid})
-    assert ctx["logo_rel"] == rel and ctx["media_path"] == WIN
+    assert ctx["logo_rels"] == [rel] and ctx["media_path"] == WIN
 
 
 def test_init_db_adds_new_columns_to_an_old_db(tmp_path):
@@ -166,3 +166,32 @@ def test_render_works_when_paths_contain_filter_syntax(settings, tmp_path):
         start_ms=1000, end_ms=3000, hook="Hook", out_path=tmp_path / "out.mp4", work=work,
         disclosure="Paid partnership #ad")
     assert Path(out["path"]).stat().st_size > 0
+
+
+def test_two_logos_render_side_by_side_and_can_be_removed(conn, campaign_id, settings, tmp_path):
+    from clipforge.campaigns import logo_list, remove_logo
+    from clipforge.stages.render import CAPTION_X, LOGO_H, LOGO_PAD, LOGO_Y
+
+    red = add_logo(conn, campaign_id, _red_png(tmp_path / "red.png"))
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "color=blue:s=900x900",
+                    "-frames:v", "1", str(tmp_path / "blue.png")], check=True)
+    blue = add_logo(conn, campaign_id, (tmp_path / "blue.png").read_bytes())
+    add_logo(conn, campaign_id, (tmp_path / "blue.png").read_bytes())  # same file: no duplicate
+    row = conn.execute("SELECT logo_path FROM campaigns WHERE id=?", (campaign_id,)).fetchone()[0]
+    assert logo_list(row) == [red, blue]
+
+    add_source(conn, campaign_id, str(FIXTURE.resolve()))
+    run_local(["fetch", "transcribe", "select", "render"], once=True, idle_s=0)
+    video = settings.clips_dir / conn.execute("SELECT path FROM clips LIMIT 1").fetchone()["path"]
+    cy = LOGO_Y + LOGO_PAD[1] + LOGO_H // 2
+    r, g, b = _pixel(video, 1.0, CAPTION_X - 80, cy)  # left logo: red
+    assert r > 200 and b < 60, (r, g, b)
+    r, g, b = _pixel(video, 1.0, CAPTION_X + 80, cy)  # right logo: blue
+    assert b > 200 and r < 60, (r, g, b)
+
+    remove_logo(conn, campaign_id, red)
+    row = conn.execute("SELECT logo_path FROM campaigns WHERE id=?", (campaign_id,)).fetchone()[0]
+    assert logo_list(row) == [blue]
+    remove_logo(conn, campaign_id)
+    assert conn.execute("SELECT logo_path FROM campaigns WHERE id=?",
+                        (campaign_id,)).fetchone()[0] is None

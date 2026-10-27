@@ -38,9 +38,12 @@ yt-dlp breaks when YouTube changes things. Update it with `uv lock --upgrade-pac
   - On the Pi: `/home/pi/footage/ep12.mp4`.
   - CLI: `cf source 1 "C:\…\ep4.mp4"`, plus `--on <host>` to choose the machine explicitly.
 
+## Scout: which bounties to clip
+Screenshot the campaign pages on your phone (whole bounty cards in view), open **Scout**, and upload them all at once. A minute later Discord pings the top 3; the page ranks every open bounty and says why. Upload again the next day to see how fast each one fills. "Add as campaign" pre-fills the Campaigns form; read the bounty's doc before saving.
+
 ## Campaign logo (when the brief requires one)
-- **UI:** Campaigns → the campaign → choose a PNG → Upload logo. **CLI:** `cf campaign logo 1 ~/Downloads/logo.png`.
-- It's burned into the top-right of every clip rendered **after** the upload. Clips already rendered don't change.
+- **UI:** Campaigns → the campaign → choose a PNG → Add logo. Repeat for each required logo (Man On needs Man On + Playmaker). **CLI:** `cf campaign logo 1 ~/Downloads/logo.png` adds one.
+- Logos are burned in side by side, in the order added, on a dark strip under the captions of every clip rendered **after** the upload. Clips already rendered don't change.
 - Don't add a logo to campaigns whose brief bans extra logos (GFuel does).
 
 ## Reminders
