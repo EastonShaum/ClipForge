@@ -17,7 +17,7 @@
 
 <section class="card">
   <h2>Footage</h2>
-  <div class="small">Put this campaign's videos in <b>{{ library_dir }}\{{ folder or c.media_folder or '…' }}</b> on the laptop. New files show up here within a minute.</div>
+  <div class="small">Put this bounty's videos in <b>{{ library_dir }}\{{ (b.media_folder or '…').replace('/', '\\') }}</b> on the laptop (subfolders are fine). New files show up here within a minute.</div>
   {% if files %}
   <div class="small">{{ files|length }} video(s) in the folder · {{ new_files|length }} not queued yet
     {% set settling = new_files|selectattr('settling')|list %}{% if settling %} · {{ settling|length }} still downloading or copying{% endif %}</div>

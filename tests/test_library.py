@@ -52,6 +52,7 @@ def test_bounty_folders_confirm_then_queue(client, conn):
                      _file("Man On/episode-5/ep5.mp4", mins=39)])
     page = client.get("/campaigns/1/bounties/2").text
     assert "1 video(s) in the folder" in page and "Queue footage for clipping" in page
+    assert "Campaigns\\Man On\\episode-5" in page
 
     confirm = client.get("/campaigns/1/bounties/1/queue").text
     assert "unzipped/b.mp4" in confirm and "still downloading or copying" in confirm
