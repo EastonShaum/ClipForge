@@ -138,7 +138,8 @@ def serve(host: str | None = None, port: int | None = None):
 
 @app.command()
 def worker(
-    kinds: Annotated[str, typer.Option(help="Comma list of fetch,transcribe,select,render,scout")] =
+    kinds: Annotated[str, typer.Option(
+        help="Comma list of fetch,transcribe,select,render,scout,brief")] =
     "fetch,transcribe,select,render",
     label: str = "main",
     once: Annotated[bool, typer.Option(help="Exit when the queue is empty")] = False,

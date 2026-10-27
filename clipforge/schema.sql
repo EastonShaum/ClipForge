@@ -191,3 +191,15 @@ CREATE TABLE IF NOT EXISTS scout_bounties (
     seen_at         TEXT NOT NULL                           -- when the screenshot was uploaded
 );
 CREATE INDEX IF NOT EXISTS scout_bounties_key ON scout_bounties (key, seen_at);
+
+-- Screenshots of a campaign's brief / requirements doc, and what was read off them.
+CREATE TABLE IF NOT EXISTS campaign_docs (
+    id              INTEGER PRIMARY KEY,
+    campaign_id     INTEGER NOT NULL REFERENCES campaigns(id),
+    sha             TEXT NOT NULL,
+    path            TEXT NOT NULL,                          -- relative to assets_dir
+    extracted       TEXT,                                   -- JSON from stages/brief.py
+    applied_at      TEXT,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    UNIQUE (campaign_id, sha)
+);

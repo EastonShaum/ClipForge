@@ -16,6 +16,7 @@ from clipforge.captions import build_caption
 from clipforge.config import Settings, get_settings
 from clipforge.db import tx, utcnow
 from clipforge.feedback import build_feedback, pick_prompt_version
+from clipforge.stages import brief as brief_stage
 from clipforge.stages import fetch as fetch_stage
 from clipforge.stages import render as render_stage
 from clipforge.stages import scout as scout_stage
@@ -24,7 +25,7 @@ from clipforge.stages import transcribe as transcribe_stage
 
 log = logging.getLogger(__name__)
 
-PAID_STAGES = {"transcribe", "select", "scout"}
+PAID_STAGES = {"transcribe", "select", "scout", "brief"}
 
 
 class Deferred(Exception):
@@ -92,6 +93,14 @@ def build_context(conn: sqlite3.Connection, s: Settings, job: sqlite3.Row) -> di
         except costs.BudgetExceeded as e:
             raise Deferred(str(e), 6 * 3600) from e
         return {"shot_id": shot["id"], "image_rel": shot["path"]}
+    if kind == "brief":
+        doc = conn.execute("SELECT * FROM campaign_docs WHERE id=?",
+                           (int(job["dedupe_key"].split(":")[1]),)).fetchone()
+        try:
+            costs.check_budget(conn, brief_stage.estimate_usd(s))
+        except costs.BudgetExceeded as e:
+            raise Deferred(str(e), 6 * 3600) from e
+        return {"doc_id": doc["id"], "image_rel": doc["path"]}
     raise ValueError(f"unknown job kind {kind}")
 
 
@@ -122,6 +131,9 @@ def run_handler(s: Settings, kind: str, ctx: dict, out_dir: Path | None = None) 
         if kind == "scout":
             bounties, meta = scout_stage.read_screenshot(s, s.assets_dir / ctx["image_rel"])
             return {"shot_id": ctx["shot_id"], "bounties": bounties, "meta": meta}
+        if kind == "brief":
+            brief, meta = brief_stage.read_brief(s, s.assets_dir / ctx["image_rel"])
+            return {"doc_id": ctx["doc_id"], "brief": brief, "meta": meta}
     except fetch_stage.DiskFull as e:
         raise Deferred(str(e), 1800) from e
     except transcribe_stage.MissingKey as e:
@@ -233,6 +245,13 @@ def apply_result(conn: sqlite3.Connection, s: Settings, job: sqlite3.Row, result
             costs.record(conn, provider=meta["provider"], model=meta["model"], stage="scout",
                          units=f"{meta.get('tokens_in', 0)} in, {meta.get('tokens_out', 0)} out"
                                f" ({n} bounties)", usd=meta.get("usd", 0.0))
+        elif kind == "brief":
+            meta = result["meta"]
+            conn.execute("UPDATE campaign_docs SET extracted=? WHERE id=?",
+                         (json.dumps(result["brief"]), result["doc_id"]))
+            costs.record(conn, provider=meta["provider"], model=meta["model"], stage="brief",
+                         units=f"{meta.get('tokens_in', 0)} in, {meta.get('tokens_out', 0)} out",
+                         usd=meta.get("usd", 0.0))
         jobqueue.complete(conn, job["id"])
     if kind == "render":
         _maybe_finish_source(conn, s, job["source_id"])

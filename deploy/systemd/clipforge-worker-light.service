@@ -1,12 +1,12 @@
 [Unit]
-Description=ClipForge worker (fetch, transcribe, select, scout)
+Description=ClipForge worker (fetch, transcribe, select, scout, brief)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 WorkingDirectory=%h/CLipping
 Environment=PATH=%h/.npm-global/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
-ExecStart=%h/CLipping/.venv/bin/clipforge worker --label light --kinds fetch,transcribe,select,scout
+ExecStart=%h/CLipping/.venv/bin/clipforge worker --label light --kinds fetch,transcribe,select,scout,brief
 Restart=always
 RestartSec=10
 TimeoutStopSec=60

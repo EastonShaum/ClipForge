@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from clipforge import analytics, costs, jobqueue, pipeline, scout
+from clipforge import analytics, briefs, costs, jobqueue, pipeline, scout
 from clipforge.campaigns import (
     CampaignIn,
     add_campaign,
@@ -79,8 +79,10 @@ def page(request: Request, name: str, **ctx):
 
 
 def back(url: str, msg: str = "") -> RedirectResponse:
-    sep = "&" if "?" in url else "?"
-    return RedirectResponse(f"{url}{sep}msg={quote(msg)}" if msg else url, status_code=303)
+    url, _, anchor = url.partition("#")
+    if msg:
+        url += ("&" if "?" in url else "?") + f"msg={quote(msg)}"
+    return RedirectResponse(url + (f"#{anchor}" if anchor else ""), status_code=303)
 
 
 def _clip_rows(conn, status: str, limit: int = 50) -> list[dict]:
@@ -207,8 +209,58 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
     def campaigns(request: Request, conn: DB, msg: str = ""):
         # Query params pre-fill the Add form (the Scout page's "Add as campaign" link).
         prefill = {k: v for k, v in request.query_params.items() if k != "msg"}
-        return page(request, "campaigns.html", campaigns=list_campaigns(conn), msg=msg,
-                    prefill=prefill)
+        camps = list_campaigns(conn)
+        for c in camps:
+            c["docs"] = conn.execute(
+                """SELECT d.*, j.state, j.last_error FROM campaign_docs d
+                   LEFT JOIN jobs j ON j.dedupe_key='brief:'||d.id
+                   WHERE d.campaign_id=? ORDER BY d.id""", (c["id"],)).fetchall()
+            c["brief"] = briefs.merged(conn, c["id"])
+        pending = any(d["state"] in ("queued", "running") for c in camps for d in c["docs"])
+        return page(request, "campaigns.html", campaigns=camps, msg=msg, prefill=prefill,
+                    pending=pending)
+
+    @app.post("/campaigns/{cid}/docs")
+    async def campaign_docs_upload(cid: int, conn: DB, docs: list[UploadFile] = File(...)):
+        added = 0
+        for f in docs[:20]:
+            data = await f.read(MAX_SHOT_BYTES + 1)
+            if not data or len(data) > MAX_SHOT_BYTES:
+                continue
+            try:
+                sha, path = prepare_image(data, s.assets_dir / "briefs")
+            except NotAnImage:
+                continue
+            with tx(conn):
+                cur = conn.execute("INSERT INTO campaign_docs (campaign_id, sha, path)"
+                                   " VALUES (?,?,?) ON CONFLICT(campaign_id, sha) DO NOTHING",
+                                   (cid, sha, str(path.relative_to(s.assets_dir))))
+                if cur.rowcount:
+                    jobqueue.enqueue(conn, "brief", f"brief:{cur.lastrowid}",
+                                     affinity_host=s.host_name, priority=50)
+                    added += 1
+        if not added:
+            return back("/campaigns", "Nothing new: already uploaded, or not an image")
+        return back(f"/campaigns#c{cid}", f"Reading {added} requirement screenshot(s)…")
+
+    @app.post("/campaigns/{cid}/docs/apply")
+    def campaign_docs_apply(cid: int, conn: DB):
+        changes = briefs.apply(conn, cid)
+        return back(f"/campaigns#c{cid}", "Updated " + "; ".join(changes) if changes
+                    else "Nothing new to apply")
+
+    @app.post("/campaigns/{cid}/docs/{doc_id}/delete")
+    def campaign_docs_delete(cid: int, doc_id: int, conn: DB):
+        row = conn.execute("SELECT path FROM campaign_docs WHERE id=? AND campaign_id=?",
+                           (doc_id, cid)).fetchone()
+        if row:
+            with tx(conn):
+                conn.execute("DELETE FROM jobs WHERE dedupe_key=?", (f"brief:{doc_id}",))
+                conn.execute("DELETE FROM campaign_docs WHERE id=?", (doc_id,))
+            if not conn.execute("SELECT 1 FROM campaign_docs WHERE path=?",
+                                (row["path"],)).fetchone():
+                (s.assets_dir / row["path"]).unlink(missing_ok=True)
+        return back(f"/campaigns#c{cid}", "Screenshot removed")
 
     # ---------- scouting ----------
     @app.get("/scout")

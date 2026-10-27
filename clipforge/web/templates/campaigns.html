@@ -1,9 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Campaigns · ClipForge{% endblock %}
 {% block content %}
+{% if pending %}<meta http-equiv="refresh" content="10">{% endif %}
 <h1>Campaigns</h1>
 {% for c in campaigns %}
-<div class="card">
+<div class="card" id="c{{ c.id }}">
   <div class="row"><b>#{{ c.id }} {{ c.name }}</b><span class="chip">{{ c.status }}</span>
     {% if c.category %}<span class="chip">{{ c.category }}</span>{% endif %}</div>
   <div class="row small">
@@ -14,6 +15,40 @@
   </div>
   {% if c.required_tags %}<div class="small">Tags: {{ c.required_tags }}</div>{% endif %}
   {% if c.notes %}<div class="small muted">{{ c.notes }}</div>{% endif %}
+  {% set b = c.brief %}
+  <details {{ 'open' if c.docs and not c.docs[-1].applied_at }}>
+    <summary class="small">Requirements ({{ c.docs|length }} screenshot{{ '' if c.docs|length == 1 else 's' }})</summary>
+    <div class="small" style="display:grid;gap:6px;margin-top:8px">
+    {% if b.summary %}<div>{{ b.summary|join(' ') }}</div>{% endif %}
+    {% if b.required_tags %}<div><b>Tags:</b> {{ b.required_tags|join(' ') }}</div>{% endif %}
+    {% if b.platforms %}<div><b>Platforms:</b> {{ b.platforms|join(', ') }}</div>{% endif %}
+    {% if b.length %}<div><b>Length:</b> {{ b.length|join(', ') }}</div>{% endif %}
+    {% if b.end_date %}<div><b>Ends:</b> {{ b.end_date|join(', ') }}</div>{% endif %}
+    {% if b.logo_rule %}<div><b>Logos:</b> {{ b.logo_rule|join(' ') }}</div>{% endif %}
+    {% if b.disclosure %}<div><b>Disclosure the brief asks for:</b> {{ b.disclosure|join(' · ') }} <span class="muted">(add it to the campaign's disclosure yourself; #ad stays)</span></div>{% endif %}
+    {% if b.caption_text %}<div><b>Caption must include:</b> {{ b.caption_text|join(' ') }}</div>{% endif %}
+    {% if b.rules %}<ul style="margin:0;padding-left:18px">{% for r in b.rules %}<li>{{ r }}</li>{% endfor %}</ul>{% endif %}
+    {% if b.footage_links %}<div><b>Footage:</b> {% for u in b.footage_links %}<a href="{{ u }}" target="_blank" rel="noopener">link {{ loop.index }}</a> {% endfor %}</div>{% endif %}
+    {% if c.docs %}
+    <form method="post" action="/campaigns/{{ c.id }}/docs/apply"><button class="go small">Apply to campaign</button>
+      <span class="muted">adds tags, platforms, end date, links and rules; never removes anything</span></form>
+    {% endif %}
+    <div class="row">
+    {% for d in c.docs %}
+      <form method="post" action="/campaigns/{{ c.id }}/docs/{{ d.id }}/delete" class="row">
+        <a href="/media/assets/{{ d.path }}" target="_blank" rel="noopener"><img src="/media/assets/{{ d.path }}" alt="requirements screenshot {{ loop.index }}" class="logo-thumb"></a>
+        {% if d.state in ('queued','running') %}<span class="muted">reading…</span>
+        {% elif not d.extracted %}<span class="status-failed">{{ d.state or 'failed' }}</span>{% endif %}
+        <button class="small">×</button>
+      </form>
+    {% endfor %}
+    </div>
+    <form method="post" action="/campaigns/{{ c.id }}/docs" enctype="multipart/form-data" class="row">
+      <input type="file" name="docs" accept="image/*" multiple required>
+      <button class="small">Upload requirement screenshots</button>
+    </form>
+    </div>
+  </details>
   <div class="row small">
     {% for rel in c.logo_path|logos %}
     <form method="post" action="/campaigns/{{ c.id }}/logo/remove" class="row">

@@ -154,3 +154,9 @@ A webhook is a URL you create in channel settings. It can only post into that on
 - **Ranking** (`clipforge/scout.py`), a plain formula: pay rate 40 + budget left 35 + content fit 15 + PayPal 10. Pot bounties score low on pay. Gambling is blocked; ended and disabled bounties are listed apart. Uploading again a day later gives the fill speed in %/day and a "full in ~N days" estimate, with −15 if a bounty will close within 2 days.
 - **Schema note:** the extraction model has no Optional fields (structured outputs rejected the schema as too complex); numbers use −1 for "not shown".
 - **Not automated:** nothing visits Clipping.net and nothing adds a campaign by itself. "Add as campaign" only pre-fills the form.
+
+## D25. Requirement screenshots attach to a campaign and are applied on request
+- **Why:** briefs hold the rules that disqualify clips (tags, logos, platforms, banned content), and their docs often sit behind the same bot check as the campaign pages.
+- **How:** on a campaign card, "Upload requirement screenshots" stores each image (deduplicated per campaign) and queues a `brief:<doc_id>` job on the Pi. Haiku reads the tags, platforms, length, end date, footage links, logo rule and other rules (~$0.0008 each, logged). The card shows them merged across screenshots.
+- **Apply to campaign** only adds or fills in: tags, platforms, end date, empty caption text, links, and rules appended to notes. It never removes anything and never touches the disclosure; if the brief names its own wording, the card shows it for you to add.
+- **Not yet:** the selector prompt doesn't see brief rules (e.g. "mention G FUEL on screen"). That comes with the GFuel flow.
