@@ -141,15 +141,30 @@ def test_render_context_carries_logo_for_remote_worker(conn, campaign_id, tmp_pa
     assert ctx["logo_rels"] == [rel] and ctx["media_path"] == WIN
 
 
-def test_init_db_adds_new_columns_to_an_old_db(tmp_path):
+def test_init_db_migrates_an_old_db_to_bounties(tmp_path):
     db = tmp_path / "old.db"
     c = connect(db)
-    c.execute("CREATE TABLE campaigns (id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
+    # The campaigns/sources tables as first shipped, before logos and bounties.
+    c.executescript("""
+        CREATE TABLE campaigns (id INTEGER PRIMARY KEY, name TEXT NOT NULL,
+            rate_usd REAL NOT NULL DEFAULT 0, rate_per_views INTEGER NOT NULL DEFAULT 1000,
+            min_views INTEGER NOT NULL DEFAULT 0, cap_usd REAL, end_date TEXT,
+            status TEXT NOT NULL DEFAULT 'active');
+        CREATE TABLE sources (id INTEGER PRIMARY KEY, campaign_id INTEGER NOT NULL,
+            url TEXT NOT NULL, source_key TEXT NOT NULL UNIQUE);
+        INSERT INTO campaigns (name, rate_usd, rate_per_views, end_date)
+            VALUES ('Man On – episode-4', 125, 100000, '2026-11-30');
+        INSERT INTO sources (campaign_id, url, source_key) VALUES (1, 'C:\\x.mp4', 'file:1');
+    """)
     c.close()
     init_db(db)
-    init_db(db)  # idempotent
+    init_db(db)  # idempotent: one bounty, not two
     c = connect(db)
     assert "logo_path" in {r["name"] for r in c.execute("PRAGMA table_info(campaigns)")}
+    b = c.execute("SELECT * FROM bounties").fetchall()
+    assert len(b) == 1 and b[0]["name"] == "main" and b[0]["rate_usd"] == 125
+    assert b[0]["end_date"] == "2026-11-30"
+    assert c.execute("SELECT bounty_id FROM sources").fetchone()[0] == b[0]["id"]
 
 
 def test_filter_path_escapes_windows_drive_for_both_ffmpeg_levels():

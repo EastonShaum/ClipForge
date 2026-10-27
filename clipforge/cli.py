@@ -46,6 +46,7 @@ def init():
 @campaign_app.command("add")
 def campaign_add(
     name: str,
+    bounty: Annotated[str, typer.Option(help="First bounty's name, e.g. episode-4")] = "main",
     rate: Annotated[float, typer.Option(help="Pay in USD per --per views")] = 0.0,
     per: Annotated[int, typer.Option(help="Views the rate applies to (1000, 100000…)")] = 1000,
     category: str = "podcast",
@@ -59,20 +60,48 @@ def campaign_add(
     notes: str = "",
     force: bool = False,
 ):
-    """Add a campaign. Example: clipforge campaign add "Pod X" --rate 40 --per 100000"""
+    """Add a campaign with its first bounty.
+    Example: clipforge campaign add "Man On" --bounty episode-4 --rate 125 --per 100000"""
+    from clipforge.bounties import BountyIn, add_bounty
     from clipforge.campaigns import CampaignIn, add_campaign, effective_per_1k
+    from clipforge.db import tx
 
     conn = _init()
-    c = CampaignIn(name=name, rate_usd=rate, rate_per_views=per, category=category,
-                   min_views=min_views, cap_usd=cap, allowed_platforms=platforms,
+    c = CampaignIn(name=name, category=category, allowed_platforms=platforms,
                    required_tags=tags, disclosure=disclosure, watch_feeds=feeds,
                    platform=marketplace, notes=notes)
     try:
-        cid = add_campaign(conn, c, force=force)
+        with tx(conn):
+            cid = add_campaign(conn, c, force=force)
+            bid = add_bounty(conn, cid, BountyIn(name=bounty, rate_usd=rate, rate_per_views=per,
+                                                 min_views=min_views, cap_usd=cap))
     except ValueError as e:
         typer.secho(str(e), fg="red")
         raise typer.Exit(1) from e
-    typer.echo(f"Campaign #{cid} added: ${effective_per_1k(rate, per):.2f} per 1K views")
+    typer.echo(f"Campaign #{cid} added with bounty #{bid} {bounty}:"
+               f" ${effective_per_1k(rate, per):.2f} per 1K views")
+
+
+@campaign_app.command("bounty")
+def campaign_bounty(
+    campaign_id: int,
+    name: str,
+    rate: Annotated[float, typer.Option(help="Pay in USD per --per views")] = 0.0,
+    per: int = 100000,
+    min_views: int = 0,
+    end: Annotated[str | None, typer.Option(help="End date YYYY-MM-DD")] = None,
+):
+    """Add a bounty to a campaign: clipforge campaign bounty 1 episode-5 --rate 125"""
+    from clipforge.bounties import BountyIn, add_bounty
+
+    try:
+        bid = add_bounty(_init(), campaign_id, BountyIn(name=name, rate_usd=rate,
+                                                        rate_per_views=per,
+                                                        min_views=min_views, end_date=end))
+    except ValueError as e:
+        typer.secho(str(e), fg="red")
+        raise typer.Exit(1) from e
+    typer.echo(f"Bounty #{bid} {name} added")
 
 
 @campaign_app.command("logo")
@@ -87,11 +116,15 @@ def campaign_logo(campaign_id: int, image: Path):
 
 @campaign_app.command("list")
 def campaign_list():
+    from clipforge.bounties import list_bounties
     from clipforge.campaigns import list_campaigns
 
-    for c in list_campaigns(_init()):
-        typer.echo(f"#{c['id']:<3} {c['status']:<7} ${c['per_1k']:.2f}/1K  min {c['min_views']:>7,}"
-                   f"  {c['name']}")
+    conn = _init()
+    for c in list_campaigns(conn):
+        typer.echo(f"#{c['id']:<3} {c['status']:<7} {c['name']}")
+        for b in list_bounties(conn, c["id"]):
+            typer.echo(f"     bounty #{b['id']:<3} {b['status']:<7} ${b['per_1k']:.2f}/1K"
+                       f"  min {b['min_views']:>7,}  {b['name']}")
 
 
 @app.command()
@@ -100,15 +133,17 @@ def source(
     urls: list[str],
     on: Annotated[str | None, typer.Option(help="Machine that has these local files "
                                            "(default: C:\\… = laptop, /… = this Pi)")] = None,
+    bounty: Annotated[int | None, typer.Option(help="Bounty id (default: the campaign's "
+                                               "first active bounty)")] = None,
 ):
-    """Queue footage for a campaign: links, or paths of files already downloaded."""
+    """Queue footage for a campaign's bounty: links, or paths of files already downloaded."""
     from clipforge.db import tx
     from clipforge.ingest import add_source
 
     conn = _init()
     for url in urls:
         with tx(conn):
-            sid, created = add_source(conn, campaign_id, url, on)
+            sid, created = add_source(conn, campaign_id, url, on, bounty)
         typer.echo(f"{'queued' if created else 'already known'}: source #{sid} {url}")
 
 

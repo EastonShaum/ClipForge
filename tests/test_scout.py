@@ -37,7 +37,7 @@ def test_upload_read_rank_and_prefill(client, conn, tmp_path, settings, monkeypa
     assert conn.execute("SELECT COUNT(*) FROM api_costs WHERE stage='scout'").fetchone()[0] == 1
 
     page = client.get("/scout").text
-    assert "Man On" in page and "Add as campaign" in page
+    assert "Man On" in page and "Add as bounty" in page
     form = client.get("/campaigns?name=Man+On&rate_usd=125&rate_mode=100000&category=podcast")
     assert 'value="Man On"' in form.text and '<option value="100000" selected' in form.text
 

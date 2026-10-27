@@ -52,7 +52,7 @@ def test_missed_slot_is_not_sent_late(conn, clips, sent):
 
 
 def test_digest_warns_about_ending_campaign_and_nags_until_submitted(client, conn, clips, sent):
-    client.post("/campaigns/1/end-date", data={"end_date": "2026-10-28"})
+    client.post("/campaigns/1/bounties/1/settings", data={"rate_usd": "1", "end_date": "2026-10-28"})
     client.post(f"/clips/{clips[0]}/review", data={"decision": "approved"})
     client.post(f"/clips/{clips[0]}/post", data={"platform": "tiktok",
                                                  "url": "https://www.tiktok.com/@g/video/1"})

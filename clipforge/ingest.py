@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 
 from clipforge import jobqueue
+from clipforge.bounties import default_bounty
 from clipforge.config import get_settings
 from clipforge.stages.fetch import is_windows_path, local_path
 
@@ -67,11 +68,17 @@ def file_host(conn: sqlite3.Connection, url: str, host: str | None = None) -> st
 
 
 def add_source(conn: sqlite3.Connection, campaign_id: int, url: str,
-               host: str | None = None) -> tuple[int, bool]:
+               host: str | None = None, bounty_id: int | None = None) -> tuple[int, bool]:
     """Add a source and queue its fetch job. Returns (source_id, created).
-    host pins the fetch to one machine; local files are pinned automatically (see file_host)."""
+    host pins the fetch to one machine; local files are pinned automatically (see file_host).
+    Without a bounty_id it goes to the campaign's default bounty."""
     if not conn.execute("SELECT 1 FROM campaigns WHERE id=?", (campaign_id,)).fetchone():
         raise ValueError(f"campaign {campaign_id} not found")
+    if bounty_id is None:
+        bounty_id = default_bounty(conn, campaign_id)
+    elif not conn.execute("SELECT 1 FROM bounties WHERE id=? AND campaign_id=?",
+                          (bounty_id, campaign_id)).fetchone():
+        raise ValueError(f"bounty {bounty_id} isn't part of campaign {campaign_id}")
     url = url.strip().strip('"')
     pin = file_host(conn, url, host)
     key = source_key(url, pin or "")
@@ -79,8 +86,8 @@ def add_source(conn: sqlite3.Connection, campaign_id: int, url: str,
     if existing:
         return existing["id"], False
     sid = conn.execute(
-        "INSERT INTO sources (campaign_id, url, source_key) VALUES (?, ?, ?)",
-        (campaign_id, url, key),
+        "INSERT INTO sources (campaign_id, bounty_id, url, source_key) VALUES (?, ?, ?, ?)",
+        (campaign_id, bounty_id, url, key),
     ).lastrowid
     jobqueue.enqueue(conn, "fetch", f"fetch:{sid}", source_id=sid, affinity_host=pin,
                      priority=50)

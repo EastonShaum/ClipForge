@@ -222,12 +222,14 @@ def apply_result(conn: sqlite3.Connection, s: Settings, job: sqlite3.Row, result
                          (now, sid))
         elif kind == "render":
             cand = conn.execute(
-                "SELECT c.*, s.campaign_id FROM candidates c JOIN sources s ON s.id=c.source_id"
+                "SELECT c.*, s.campaign_id, b.required_tags bounty_tags FROM candidates c"
+                " JOIN sources s ON s.id=c.source_id LEFT JOIN bounties b ON b.id=s.bounty_id"
                 " WHERE c.id=?", (job["candidate_id"],)).fetchone()
             camp = conn.execute("SELECT * FROM campaigns WHERE id=?",
                                 (cand["campaign_id"],)).fetchone()
+            tags = f"{camp['required_tags']} {cand['bounty_tags'] or ''}"
             caption = build_caption(title=cand["title"], hook=cand["hook_text"],
-                                    category=camp["category"], required_tags=camp["required_tags"],
+                                    category=camp["category"], required_tags=tags,
                                     caption_notes=camp["caption_notes"],
                                     disclosure=camp["disclosure"])
             conn.execute(

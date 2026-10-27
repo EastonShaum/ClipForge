@@ -217,3 +217,23 @@ CREATE TABLE IF NOT EXISTS library_files (
     seen_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
     PRIMARY KEY (host, path)
 );
+
+-- A campaign (the brand, e.g. Man On) pays through bounties (e.g. one per episode), each with
+-- its own rate, budget, end date, requirements and footage folder.
+CREATE TABLE IF NOT EXISTS bounties (
+    id              INTEGER PRIMARY KEY,
+    campaign_id     INTEGER NOT NULL REFERENCES campaigns(id),
+    name            TEXT NOT NULL,
+    rate_usd        REAL NOT NULL DEFAULT 0,
+    rate_per_views  INTEGER NOT NULL DEFAULT 1000,
+    min_views       INTEGER NOT NULL DEFAULT 0,
+    cap_usd         REAL,
+    end_date        TEXT,
+    status          TEXT NOT NULL DEFAULT 'active',         -- active | paused | ended
+    required_tags   TEXT NOT NULL DEFAULT '',               -- on top of the campaign's tags
+    notes           TEXT NOT NULL DEFAULT '',
+    source_links    TEXT NOT NULL DEFAULT '',
+    media_folder    TEXT,                                   -- e.g. "ManOn/episode-4"
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    UNIQUE (campaign_id, name)
+);

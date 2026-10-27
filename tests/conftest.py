@@ -36,11 +36,15 @@ def conn(settings):
 
 @pytest.fixture
 def campaign_id(conn):
+    """A campaign with one bounty ("main"), like most tests need."""
+    from clipforge.bounties import BountyIn, add_bounty
     from clipforge.campaigns import CampaignIn, add_campaign
 
-    return add_campaign(conn, CampaignIn(name="Test Pod", category="podcast", rate_usd=40,
-                                         rate_per_views=100_000, min_views=10_000, cap_usd=100,
-                                         required_tags="@testpod #testcampaign"))
+    cid = add_campaign(conn, CampaignIn(name="Test Pod", category="podcast",
+                                        required_tags="@testpod #testcampaign"))
+    add_bounty(conn, cid, BountyIn(name="main", rate_usd=40, rate_per_views=100_000,
+                                   min_views=10_000, cap_usd=100))
+    return cid
 
 
 @pytest.fixture

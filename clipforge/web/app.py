@@ -16,10 +16,12 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from clipforge import analytics, briefs, costs, jobqueue, library, pipeline, scout
+from clipforge.bounties import BountyIn, add_bounty, get_bounty, list_bounties
 from clipforge.campaigns import (
     CampaignIn,
     add_campaign,
     add_logo,
+    delete_bounty,
     delete_campaign,
     get_campaign,
     list_campaigns,
@@ -206,12 +208,18 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
                      (post_id, views, int(likes) if likes.strip().isdigit() else None))
         return back("/posts", "Views saved")
 
-    # ---------- campaigns (each with its footage, requirements and logos) ----------
+    # ---------- campaigns → bounties (each bounty: footage, requirements, settings) ----------
     def _camp_or_404(conn, cid: int) -> dict:
         c = get_campaign(conn, cid)
         if not c:
             raise HTTPException(404, "no such campaign")
         return c
+
+    def _bounty_or_404(conn, cid: int, bid: int) -> dict:
+        b = get_bounty(conn, bid)
+        if not b or b["campaign_id"] != cid:
+            raise HTTPException(404, "no such bounty")
+        return b
 
     @app.get("/campaigns")
     def campaigns(request: Request, conn: DB, msg: str = ""):
@@ -219,66 +227,71 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         prefill = {k: v for k, v in request.query_params.items() if k != "msg"}
         camps = list_campaigns(conn)
         for c in camps:
-            c.update(dict(conn.execute(
-                """SELECT COUNT(DISTINCT s.id) sources, COUNT(k.id) clips,
-                          SUM(k.status='in_review') to_review
-                   FROM sources s LEFT JOIN candidates ca ON ca.source_id=s.id
-                   LEFT JOIN clips k ON k.candidate_id=ca.id WHERE s.campaign_id=?""",
-                (c["id"],)).fetchone()))
+            c["bounties"] = list_bounties(conn, c["id"])
+            c["to_review"] = conn.execute(
+                "SELECT COUNT(*) FROM clips k JOIN candidates ca ON ca.id=k.candidate_id JOIN"
+                " sources s ON s.id=ca.source_id WHERE s.campaign_id=? AND k.status='in_review'",
+                (c["id"],)).fetchone()[0]
         return page(request, "campaigns.html", campaigns=camps, msg=msg, prefill=prefill)
+
+    @app.post("/campaigns")
+    async def create_campaign(request: Request, conn: DB):
+        """Add a campaign with its first bounty. A campaign that already exists (same name) just
+        gets the new bounty, so Scout's "Add" works for a second episode too."""
+        form = {k: v for k, v in dict(await request.form()).items() if v not in ("", None)}
+        force = form.pop("force", None) == "on"
+        bounty = {"name": form.pop("bounty_name", "main"),
+                  "rate_usd": form.pop("rate_usd", 0),
+                  "rate_per_views": int(form.pop("rate_mode", 1000)),
+                  "min_views": form.pop("min_views", 0), "cap_usd": form.pop("cap_usd", None),
+                  "end_date": form.pop("end_date", None)}
+        existing = conn.execute("SELECT id FROM campaigns WHERE lower(name)=lower(?)",
+                                (form.get("name", ""),)).fetchone()
+        try:
+            with tx(conn):
+                cid = existing["id"] if existing else add_campaign(conn, CampaignIn(**form),
+                                                                   force=force)
+                add_bounty(conn, cid, BountyIn(**bounty))
+        except (ValueError, TypeError) as e:
+            return back("/campaigns", str(e).split("\n")[0][:200])
+        return back(f"/campaigns/{cid}", f"Bounty {bounty['name']} added" if existing
+                    else f"Campaign #{cid} added")
 
     @app.get("/campaigns/{cid}")
     def campaign_page(request: Request, cid: int, conn: DB, msg: str = ""):
         c = _camp_or_404(conn, cid)
-        docs = conn.execute(
-            """SELECT d.*, j.state, j.last_error FROM campaign_docs d
-               LEFT JOIN jobs j ON j.dedupe_key='brief:'||d.id
-               WHERE d.campaign_id=? ORDER BY d.id""", (cid,)).fetchall()
-        sources = conn.execute(
-            """SELECT s.*,
-                      (SELECT last_error FROM jobs j WHERE j.source_id=s.id AND j.last_error
-                       IS NOT NULL ORDER BY j.updated_at DESC LIMIT 1) last_error,
-                      (SELECT COUNT(*) FROM candidates WHERE source_id=s.id AND kept=1) kept
-               FROM sources s WHERE s.campaign_id=? ORDER BY s.id DESC""", (cid,)).fetchall()
-        files = library.files_for(conn, c)
-        busy = any(d["state"] in ("queued", "running") for d in docs) or any(
-            r["status"] not in ("rendered", "failed") for r in sources)
-        return page(request, "campaign.html", c=c, docs=docs, brief=briefs.merged(conn, cid),
-                    sources=sources, files=files, folder=library.match_folder(conn, c),
-                    folders=library.folders(conn), new_files=[f for f in files
-                                                              if not f["queued"]],
-                    hosts=[s.host_name, *remote_hosts(conn)], busy=busy,
-                    library_dir=s.media_library_dir.name, msg=msg)
+        return page(request, "campaign.html", c=c, bounties=list_bounties(conn, cid), msg=msg,
+                    library_dir=s.media_library_dir.name,
+                    counts=conn.execute(
+                        "SELECT COUNT(DISTINCT s.id) sources, COUNT(k.id) clips FROM sources s"
+                        " LEFT JOIN candidates ca ON ca.source_id=s.id LEFT JOIN clips k ON"
+                        " k.candidate_id=ca.id WHERE s.campaign_id=?", (cid,)).fetchone())
 
-    @app.post("/campaigns/{cid}/folder")
-    def campaign_folder(cid: int, conn: DB, folder: str = Form("")):
-        conn.execute("UPDATE campaigns SET media_folder=? WHERE id=?", (folder or None, cid))
-        return back(f"/campaigns/{cid}", f"Footage folder: {folder}" if folder
-                    else "Footage folder: matched by name")
+    @app.post("/campaigns/{cid}/bounties")
+    def bounty_add(cid: int, conn: DB, name: str = Form(...), rate_usd: float = Form(0),
+                   rate_mode: int = Form(1000), min_views: int = Form(0),
+                   end_date: str = Form("")):
+        _camp_or_404(conn, cid)
+        try:
+            bid = add_bounty(conn, cid, BountyIn(name=name, rate_usd=rate_usd,
+                                                 rate_per_views=rate_mode, min_views=min_views,
+                                                 end_date=end_date or None))
+        except ValueError as e:
+            return back(f"/campaigns/{cid}", str(e))
+        return back(f"/campaigns/{cid}/bounties/{bid}", f"Bounty {name} added")
 
-    @app.get("/campaigns/{cid}/queue")
-    def campaign_queue_confirm(request: Request, cid: int, conn: DB):
-        c = _camp_or_404(conn, cid)
-        files = [f for f in library.files_for(conn, c) if not f["queued"]]
-        ready = [f for f in files if not f["settling"]]
-        return page(request, "queue.html", c=c, files=files, est=library.estimate(ready),
-                    budget=costs.budget_status(conn), keep=s.candidates_keep)
+    @app.post("/campaigns/{cid}/settings")
+    def campaign_settings(cid: int, conn: DB, required_tags: str = Form(""),
+                          allowed_platforms: str = Form(""), notes: str = Form("")):
+        conn.execute("UPDATE campaigns SET required_tags=?, allowed_platforms=?, notes=?"
+                     " WHERE id=?", (required_tags.strip(), allowed_platforms.strip()
+                                     or "tiktok,youtube", notes.strip(), cid))
+        return back(f"/campaigns/{cid}", "Saved")
 
-    @app.post("/campaigns/{cid}/queue")
-    def campaign_queue(cid: int, conn: DB, path: list[str] = Form([])):
-        c = _camp_or_404(conn, cid)
-        known = {f["path"]: f for f in library.files_for(conn, c)}
-        added = 0
-        for p in path:
-            f = known.get(p)
-            if not f or f["queued"] or f["settling"]:
-                continue
-            with tx(conn):
-                _, created = add_source(conn, cid, f["path"], f["host"])
-            added += created
-        if not added:
-            return back(f"/campaigns/{cid}", "Nothing queued")
-        return back(f"/campaigns/{cid}", f"Queued {added} video(s) for clipping")
+    @app.post("/campaigns/{cid}/status")
+    def campaign_status(cid: int, conn: DB, status: str = Form(...)):
+        conn.execute("UPDATE campaigns SET status=? WHERE id=?", (status, cid))
+        return back(f"/campaigns/{cid}", "Updated")
 
     @app.post("/campaigns/{cid}/delete")
     def campaign_delete(cid: int, conn: DB):
@@ -289,71 +302,6 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
             return back(f"/campaigns/{cid}", str(e))
         return back("/campaigns", f"Deleted {c['name']}: {n['sources']} videos, {n['clips']}"
                     f" clips, {n['posts']} posts")
-
-    @app.post("/campaigns/{cid}/docs")
-    async def campaign_docs_upload(cid: int, conn: DB, docs: list[UploadFile] = File(...)):
-        added = 0
-        for f in docs[:20]:
-            data = await f.read(MAX_SHOT_BYTES + 1)
-            if not data or len(data) > MAX_SHOT_BYTES:
-                continue
-            try:
-                sha, path = prepare_image(data, s.assets_dir / "briefs")
-            except NotAnImage:
-                continue
-            with tx(conn):
-                cur = conn.execute("INSERT INTO campaign_docs (campaign_id, sha, path)"
-                                   " VALUES (?,?,?) ON CONFLICT(campaign_id, sha) DO NOTHING",
-                                   (cid, sha, str(path.relative_to(s.assets_dir))))
-                if cur.rowcount:
-                    jobqueue.enqueue(conn, "brief", f"brief:{cur.lastrowid}",
-                                     affinity_host=s.host_name, priority=50)
-                    added += 1
-        if not added:
-            return back(f"/campaigns/{cid}", "Nothing new: already uploaded, or not an image")
-        return back(f"/campaigns/{cid}", f"Reading {added} requirement screenshot(s)…")
-
-    @app.post("/campaigns/{cid}/docs/apply")
-    def campaign_docs_apply(cid: int, conn: DB):
-        changes = briefs.apply(conn, cid)
-        return back(f"/campaigns/{cid}", "Updated " + "; ".join(changes) if changes
-                    else "Nothing new to apply")
-
-    @app.post("/campaigns/{cid}/docs/{doc_id}/delete")
-    def campaign_docs_delete(cid: int, doc_id: int, conn: DB):
-        row = conn.execute("SELECT path FROM campaign_docs WHERE id=? AND campaign_id=?",
-                           (doc_id, cid)).fetchone()
-        if row:
-            with tx(conn):
-                conn.execute("DELETE FROM jobs WHERE dedupe_key=?", (f"brief:{doc_id}",))
-                conn.execute("DELETE FROM campaign_docs WHERE id=?", (doc_id,))
-            if not conn.execute("SELECT 1 FROM campaign_docs WHERE path=?",
-                                (row["path"],)).fetchone():
-                (s.assets_dir / row["path"]).unlink(missing_ok=True)
-        return back(f"/campaigns/{cid}", "Screenshot removed")
-
-    @app.post("/campaigns")
-    async def create_campaign(request: Request, conn: DB):
-        form = dict(await request.form())
-        data = {k: v for k, v in form.items() if v not in ("", None)}
-        if "rate_mode" in data:  # UI lets you enter "$40 per 100K" style rates
-            data["rate_per_views"] = int(data.pop("rate_mode"))
-        force = data.pop("force", None) == "on"
-        try:
-            cid = add_campaign(conn, CampaignIn(**data), force=force)
-        except (ValueError, TypeError) as e:
-            return back("/campaigns", str(e).split("\n")[0][:200])
-        return back(f"/campaigns/{cid}", f"Campaign #{cid} added")
-
-    @app.post("/campaigns/{cid}/status")
-    def campaign_status(cid: int, conn: DB, status: str = Form(...)):
-        conn.execute("UPDATE campaigns SET status=? WHERE id=?", (status, cid))
-        return back(f"/campaigns/{cid}", "Updated")
-
-    @app.post("/campaigns/{cid}/end-date")
-    def campaign_end_date(cid: int, conn: DB, end_date: str = Form("")):
-        conn.execute("UPDATE campaigns SET end_date=? WHERE id=?", (end_date or None, cid))
-        return back(f"/campaigns/{cid}", "End date saved" if end_date else "End date cleared")
 
     @app.post("/campaigns/{cid}/logo")
     async def campaign_logo(cid: int, conn: DB, logo: UploadFile = File(...)):
@@ -368,25 +316,154 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         remove_logo(conn, cid, rel or None)
         return back(f"/campaigns/{cid}", "Logo removed")
 
+    @app.get("/campaigns/{cid}/bounties/{bid}")
+    def bounty_page(request: Request, cid: int, bid: int, conn: DB, msg: str = ""):
+        c = _camp_or_404(conn, cid)
+        b = _bounty_or_404(conn, cid, bid)
+        docs = conn.execute(
+            """SELECT d.*, j.state, j.last_error FROM campaign_docs d
+               LEFT JOIN jobs j ON j.dedupe_key='brief:'||d.id
+               WHERE d.bounty_id=? ORDER BY d.id""", (bid,)).fetchall()
+        sources = conn.execute(
+            """SELECT s.*,
+                      (SELECT last_error FROM jobs j WHERE j.source_id=s.id AND j.last_error
+                       IS NOT NULL ORDER BY j.updated_at DESC LIMIT 1) last_error,
+                      (SELECT COUNT(*) FROM candidates WHERE source_id=s.id AND kept=1) kept
+               FROM sources s WHERE s.bounty_id=? ORDER BY s.id DESC""", (bid,)).fetchall()
+        files = library.files_for(conn, b)
+        busy = any(d["state"] in ("queued", "running") for d in docs) or any(
+            r["status"] not in ("rendered", "failed") for r in sources)
+        return page(request, "bounty.html", c=c, b=b, docs=docs, brief=briefs.merged(conn, bid),
+                    sources=sources, files=files, new_files=[f for f in files if not f["queued"]],
+                    folders=library.folders(conn), hosts=[s.host_name, *remote_hosts(conn)],
+                    busy=busy, library_dir=s.media_library_dir.name, msg=msg)
+
+    @app.post("/campaigns/{cid}/bounties/{bid}/settings")
+    def bounty_settings(cid: int, bid: int, conn: DB, rate_usd: float = Form(0),
+                        rate_mode: int = Form(1000), min_views: int = Form(0),
+                        cap_usd: str = Form(""), end_date: str = Form(""),
+                        required_tags: str = Form(""), notes: str = Form("")):
+        _bounty_or_404(conn, cid, bid)
+        conn.execute(
+            "UPDATE bounties SET rate_usd=?, rate_per_views=?, min_views=?, cap_usd=?,"
+            " end_date=?, required_tags=?, notes=? WHERE id=?",
+            (rate_usd, rate_mode, min_views, float(cap_usd) if cap_usd.strip() else None,
+             end_date or None, required_tags.strip(), notes.strip(), bid))
+        return back(f"/campaigns/{cid}/bounties/{bid}", "Saved")
+
+    @app.post("/campaigns/{cid}/bounties/{bid}/status")
+    def bounty_status(cid: int, bid: int, conn: DB, status: str = Form(...)):
+        conn.execute("UPDATE bounties SET status=? WHERE id=? AND campaign_id=?",
+                     (status, bid, cid))
+        return back(f"/campaigns/{cid}/bounties/{bid}", "Updated")
+
+    @app.post("/campaigns/{cid}/bounties/{bid}/folder")
+    def bounty_folder_set(cid: int, bid: int, conn: DB, folder: str = Form(...)):
+        conn.execute("UPDATE bounties SET media_folder=? WHERE id=? AND campaign_id=?",
+                     (folder.strip().strip("/") or None, bid, cid))
+        return back(f"/campaigns/{cid}/bounties/{bid}", f"Footage folder: {folder}")
+
+    @app.post("/campaigns/{cid}/bounties/{bid}/delete")
+    def bounty_delete(cid: int, bid: int, conn: DB):
+        b = _bounty_or_404(conn, cid, bid)
+        try:
+            n = delete_bounty(conn, bid)
+        except ValueError as e:
+            return back(f"/campaigns/{cid}/bounties/{bid}", str(e))
+        return back(f"/campaigns/{cid}", f"Deleted bounty {b['name']}: {n['sources']} videos,"
+                    f" {n['clips']} clips, {n['posts']} posts")
+
+    @app.get("/campaigns/{cid}/bounties/{bid}/queue")
+    def bounty_queue_confirm(request: Request, cid: int, bid: int, conn: DB):
+        c = _camp_or_404(conn, cid)
+        b = _bounty_or_404(conn, cid, bid)
+        files = [f for f in library.files_for(conn, b) if not f["queued"]]
+        ready = [f for f in files if not f["settling"]]
+        return page(request, "queue.html", c=c, b=b, files=files, est=library.estimate(ready),
+                    budget=costs.budget_status(conn), keep=s.candidates_keep)
+
+    @app.post("/campaigns/{cid}/bounties/{bid}/queue")
+    def bounty_queue(cid: int, bid: int, conn: DB, path: list[str] = Form([])):
+        b = _bounty_or_404(conn, cid, bid)
+        known = {f["path"]: f for f in library.files_for(conn, b)}
+        added = 0
+        for p in path:
+            f = known.get(p)
+            if not f or f["queued"] or f["settling"]:
+                continue
+            with tx(conn):
+                _, created = add_source(conn, cid, f["path"], f["host"], bounty_id=bid)
+            added += created
+        return back(f"/campaigns/{cid}/bounties/{bid}",
+                    f"Queued {added} video(s) for clipping" if added else "Nothing queued")
+
+    @app.post("/campaigns/{cid}/bounties/{bid}/docs")
+    async def bounty_docs_upload(cid: int, bid: int, conn: DB,
+                                 docs: list[UploadFile] = File(...)):
+        _bounty_or_404(conn, cid, bid)
+        added = 0
+        for f in docs[:20]:
+            data = await f.read(MAX_SHOT_BYTES + 1)
+            if not data or len(data) > MAX_SHOT_BYTES:
+                continue
+            try:
+                sha, path = prepare_image(data, s.assets_dir / "briefs")
+            except NotAnImage:
+                continue
+            with tx(conn):
+                cur = conn.execute(
+                    "INSERT INTO campaign_docs (campaign_id, bounty_id, sha, path) VALUES"
+                    " (?,?,?,?) ON CONFLICT(campaign_id, sha) DO NOTHING",
+                    (cid, bid, sha, str(path.relative_to(s.assets_dir))))
+                if cur.rowcount:
+                    jobqueue.enqueue(conn, "brief", f"brief:{cur.lastrowid}",
+                                     affinity_host=s.host_name, priority=50)
+                    added += 1
+        url = f"/campaigns/{cid}/bounties/{bid}"
+        return back(url, f"Reading {added} requirement screenshot(s)…" if added
+                    else "Nothing new: already uploaded, or not an image")
+
+    @app.post("/campaigns/{cid}/bounties/{bid}/docs/apply")
+    def bounty_docs_apply(cid: int, bid: int, conn: DB):
+        _bounty_or_404(conn, cid, bid)
+        changes = briefs.apply(conn, bid)
+        return back(f"/campaigns/{cid}/bounties/{bid}", "Updated " + "; ".join(changes)
+                    if changes else "Nothing new to apply")
+
+    @app.post("/campaigns/{cid}/bounties/{bid}/docs/{doc_id}/delete")
+    def bounty_docs_delete(cid: int, bid: int, doc_id: int, conn: DB):
+        row = conn.execute("SELECT path FROM campaign_docs WHERE id=? AND bounty_id=?",
+                           (doc_id, bid)).fetchone()
+        if row:
+            with tx(conn):
+                conn.execute("DELETE FROM jobs WHERE dedupe_key=?", (f"brief:{doc_id}",))
+                conn.execute("DELETE FROM campaign_docs WHERE id=?", (doc_id,))
+            if not conn.execute("SELECT 1 FROM campaign_docs WHERE path=?",
+                                (row["path"],)).fetchone():
+                (s.assets_dir / row["path"]).unlink(missing_ok=True)
+        return back(f"/campaigns/{cid}/bounties/{bid}", "Screenshot removed")
+
     @app.get("/sources")
-    def sources():  # footage now lives on each campaign's page
+    def sources():  # footage now lives on each bounty's page
         return RedirectResponse("/campaigns", status_code=303)
 
     @app.post("/sources")
     def create_source(conn: DB, campaign_id: int = Form(...), urls: str = Form(...),
-                      host: str = Form("")):
+                      host: str = Form(""), bounty_id: int | None = Form(None)):
+        url_back = (f"/campaigns/{campaign_id}/bounties/{bounty_id}" if bounty_id
+                    else f"/campaigns/{campaign_id}")
         added = dup = 0
         # One per line, not per whitespace: Windows paths often contain spaces.
         for url in filter(None, (u.strip() for u in urls.splitlines())):
             try:
                 with tx(conn):
-                    _, created = add_source(conn, campaign_id, url, host or None)
+                    _, created = add_source(conn, campaign_id, url, host or None, bounty_id)
             except ValueError as e:
-                return back(f"/campaigns/{campaign_id}", str(e))
+                return back(url_back, str(e))
             added += created
             dup += not created
-        return back(f"/campaigns/{campaign_id}", f"Queued {added} source(s)"
-                    + (f", {dup} already known" if dup else ""))
+        return back(url_back, f"Queued {added} source(s)" + (f", {dup} already known" if dup
+                                                             else ""))
 
     @app.post("/sources/{sid}/retry")
     def retry_source(sid: int, conn: DB):
@@ -394,8 +471,10 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
                      " AND state IN ('dead','failed','queued')", (utcnow(), sid))
         conn.execute("UPDATE sources SET status=CASE WHEN status='failed' THEN 'new' ELSE status"
                      " END, error=NULL WHERE id=?", (sid,))
-        row = conn.execute("SELECT campaign_id FROM sources WHERE id=?", (sid,)).fetchone()
-        return back(f"/campaigns/{row['campaign_id']}" if row else "/campaigns", "Retrying")
+        row = conn.execute("SELECT campaign_id, bounty_id FROM sources WHERE id=?",
+                           (sid,)).fetchone()
+        return back(f"/campaigns/{row['campaign_id']}/bounties/{row['bounty_id']}" if row
+                    else "/campaigns", "Retrying")
 
     # ---------- scouting ----------
     @app.get("/scout")
@@ -548,14 +627,17 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
     @app.get("/api/worker/library/folders", dependencies=[Worker])
     def api_library_folders(conn: DB):
         """Footage folders the media machine should have: one per active campaign."""
-        rows = conn.execute("SELECT media_folder FROM campaigns WHERE status='active' AND"
-                            " media_folder IS NOT NULL ORDER BY id").fetchall()
+        rows = conn.execute(
+            "SELECT b.media_folder FROM bounties b JOIN campaigns c ON c.id=b.campaign_id"
+            " WHERE b.status='active' AND c.status='active' AND b.media_folder IS NOT NULL"
+            " ORDER BY b.id").fetchall()
         return {"folders": [r["media_folder"] for r in rows]}
 
     @app.post("/api/worker/library", dependencies=[Worker])
     def api_library(body: LibraryIn, conn: DB):
         with tx(conn):
             n = library.store(conn, body.host, body.files)
+            library.relink_moved(conn, body.host)
         return {"ok": True, "files": n}
 
     class DeferIn(BaseModel):

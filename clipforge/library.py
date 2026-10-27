@@ -1,11 +1,11 @@
-"""Media library: campaign footage you downloaded into one folder per campaign.
+"""Media library: campaign footage you downloaded, one folder per bounty
+(Campaigns/<campaign>/<bounty>/).
 
 The worker that holds the files (the laptop) scans its library and reports it to the Pi; the Pi
-matches folders to campaigns by name and lets you pick files to queue. Files are clipped in place
+shows each bounty the files in its folder and lets you pick files to queue. Files are clipped in place
 (D20); nothing here moves or deletes them."""
 
 import os
-import re
 import sqlite3
 import subprocess
 import time
@@ -56,11 +56,12 @@ def scan(root: Path, probe: bool = True) -> list[dict]:
 
 
 def make_folders(root: Path, names: list[str]) -> list[str]:
-    """Create each campaign's footage folder under root (on the machine holding the media).
-    Names come from the Pi; anything that isn't a plain folder name is ignored."""
+    """Create each bounty's footage folder under root (on the machine holding the media), e.g.
+    "ManOn/episode-4". Names come from the Pi; anything but plain relative folders is ignored."""
     made = []
     for name in names:
-        if not name or name in (".", "..") or any(c in name for c in '/\\:'):
+        parts = (name or "").split("/")
+        if not name or any(p in ("", ".", "..") or any(c in p for c in '\\:') for p in parts):
             continue
         d = root / name
         if not d.is_dir():
@@ -79,39 +80,35 @@ def store(conn: sqlite3.Connection, host: str, files: list[dict]) -> int:
     return len(files)
 
 
-def _norm(t: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "", t.lower())
+def _dir(rel: str) -> str:
+    return rel.rsplit("/", 1)[0] if "/" in rel else ""
 
 
-def folders(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    return conn.execute(
-        "SELECT folder, host, COUNT(*) n, SUM(size) bytes FROM library_files WHERE folder != ''"
-        " GROUP BY host, folder ORDER BY folder").fetchall()
+def folders(conn: sqlite3.Connection) -> list[dict]:
+    """Every folder that holds videos, with counts (for picking a different folder)."""
+    out: dict[str, dict] = {}
+    for r in conn.execute("SELECT rel, size FROM library_files"):
+        d = out.setdefault(_dir(r["rel"]), {"folder": _dir(r["rel"]), "n": 0, "bytes": 0})
+        d["n"] += 1
+        d["bytes"] += r["size"]
+    return sorted((d for d in out.values() if d["folder"]), key=lambda d: d["folder"].lower())
 
 
-def match_folder(conn: sqlite3.Connection, campaign: sqlite3.Row | dict) -> str | None:
-    """The campaign's chosen folder, else the folder whose name best matches the campaign's
-    ('ManOn' matches 'Man On – episode-4'; the longest match wins)."""
-    if campaign["media_folder"]:
-        return campaign["media_folder"]
-    name = _norm(campaign["name"])
-    best = None
-    for r in folders(conn):
-        f = _norm(r["folder"])
-        if f and (f in name or name in f) and (best is None or len(f) > len(_norm(best))):
-            best = r["folder"]
-    return best
+def _in(rel: str, folder: str) -> bool:
+    """rel is inside folder or any subfolder of it (Windows: case-insensitive)."""
+    return rel.lower().startswith(folder.strip("/").lower() + "/")
 
 
-def files_for(conn: sqlite3.Connection, campaign: sqlite3.Row | dict) -> list[dict]:
-    """Library files in the campaign's folder, each marked queued / settling / ready."""
-    folder = match_folder(conn, campaign)
+def files_for(conn: sqlite3.Connection, bounty: sqlite3.Row | dict) -> list[dict]:
+    """Library files in the bounty's folder (and subfolders, since unzipped downloads nest),
+    each marked queued / settling / ready."""
+    folder = bounty["media_folder"]
     if not folder:
         return []
-    rows = conn.execute("SELECT * FROM library_files WHERE folder=? ORDER BY rel",
-                        (folder,)).fetchall()
     out = []
-    for r in rows:
+    for r in conn.execute("SELECT * FROM library_files ORDER BY rel"):
+        if not _in(r["rel"], folder):
+            continue
         f = dict(r)
         f["source_key"] = source_key(f["path"], f["host"])
         f["queued"] = bool(conn.execute("SELECT 1 FROM sources WHERE source_key=?",
@@ -119,6 +116,32 @@ def files_for(conn: sqlite3.Connection, campaign: sqlite3.Row | dict) -> list[di
         f["settling"] = time.time() - f["mtime"] < SETTLE_S or f["duration_s"] is None
         out.append(f)
     return out
+
+
+def relink_moved(conn: sqlite3.Connection, host: str) -> int:
+    """A clipped file you moved (e.g. into its bounty folder) keeps its source: if a local source
+    on this host points at a path that's gone and exactly one library file has the same name,
+    the source follows it. Stops re-queuing (and paying for) the same footage twice."""
+    moved = 0
+    by_name: dict[str, list[sqlite3.Row]] = {}
+    for f in conn.execute("SELECT * FROM library_files WHERE host=?", (host,)):
+        by_name.setdefault(f["rel"].rsplit("/", 1)[-1].lower(), []).append(f)
+    paths = {f["path"] for fs in by_name.values() for f in fs}
+    for src in conn.execute("SELECT id, url, media_path FROM sources WHERE media_host=? AND"
+                            " url NOT LIKE 'http%'", (host,)).fetchall():
+        old = src["media_path"] or src["url"]
+        if old in paths:
+            continue
+        hits = by_name.get(old.replace("\\", "/").rsplit("/", 1)[-1].lower(), [])
+        if len(hits) != 1:
+            continue
+        new, key = hits[0]["path"], source_key(hits[0]["path"], host)
+        if conn.execute("SELECT 1 FROM sources WHERE source_key=?", (key,)).fetchone():
+            continue  # the new path was queued separately; leave both alone
+        conn.execute("UPDATE sources SET url=?, media_path=?, source_key=? WHERE id=?",
+                     (new, new, key, src["id"]))
+        moved += 1
+    return moved
 
 
 def estimate(files: list[dict]) -> dict:

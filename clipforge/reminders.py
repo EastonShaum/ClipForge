@@ -12,6 +12,8 @@ from clipforge.config import Settings, get_settings
 LATE_GRACE = timedelta(hours=2)  # a slot missed by more than this is skipped, not sent late
 ENDING_SOON_DAYS = 3
 SUBMIT_AFTER = timedelta(minutes=30)  # give a fresh post time to be submitted before nagging
+# "Man On · episode-4"; a migrated campaign's lone "main" bounty shows just the campaign.
+LABEL = "CASE WHEN b.name IS NULL OR b.name='main' THEN cp.name ELSE cp.name || ' · ' || b.name END"
 
 
 def _once(conn: sqlite3.Connection, key: str) -> bool:
@@ -31,14 +33,15 @@ def next_to_post(conn: sqlite3.Connection) -> list[dict]:
     """Approved or part-posted clips with platforms still to go: campaigns ending soonest first,
     then the highest score."""
     rows = conn.execute(
-        """SELECT k.id, k.status, c.hook_text, c.score, cp.name campaign, cp.end_date,
-                  cp.allowed_platforms, GROUP_CONCAT(p.platform) done
-           FROM clips k JOIN candidates c ON c.id=k.candidate_id
-           JOIN sources s ON s.id=c.source_id JOIN campaigns cp ON cp.id=s.campaign_id
-           LEFT JOIN posts p ON p.clip_id=k.id
-           WHERE k.status IN ('approved','posted') AND cp.status='active'
-           GROUP BY k.id
-           ORDER BY cp.end_date IS NULL, cp.end_date, c.score DESC, k.id""").fetchall()
+        f"""SELECT k.id, k.status, c.hook_text, c.score, {LABEL} campaign, b.end_date,
+                   cp.allowed_platforms, GROUP_CONCAT(p.platform) done
+            FROM clips k JOIN candidates c ON c.id=k.candidate_id
+            JOIN sources s ON s.id=c.source_id JOIN campaigns cp ON cp.id=s.campaign_id
+            LEFT JOIN bounties b ON b.id=s.bounty_id LEFT JOIN posts p ON p.clip_id=k.id
+            WHERE k.status IN ('approved','posted') AND cp.status='active'
+              AND COALESCE(b.status, 'active')='active'
+            GROUP BY k.id
+            ORDER BY b.end_date IS NULL, b.end_date, c.score DESC, k.id""").fetchall()
     out = []
     for r in rows:
         done = set((r["done"] or "").split(","))
@@ -51,18 +54,21 @@ def next_to_post(conn: sqlite3.Connection) -> list[dict]:
 def unsubmitted(conn: sqlite3.Connection, now_utc: datetime) -> list[sqlite3.Row]:
     cutoff = (now_utc - SUBMIT_AFTER).strftime("%Y-%m-%dT%H:%M:%SZ")
     return conn.execute(
-        """SELECT p.id, p.platform, p.url, c.hook_text, cp.name campaign
-           FROM posts p JOIN clips k ON k.id=p.clip_id JOIN candidates c ON c.id=k.candidate_id
-           JOIN sources s ON s.id=c.source_id JOIN campaigns cp ON cp.id=s.campaign_id
-           WHERE p.submitted_at IS NULL AND p.posted_at <= ? ORDER BY p.id""",
+        f"""SELECT p.id, p.platform, p.url, c.hook_text, {LABEL} campaign
+            FROM posts p JOIN clips k ON k.id=p.clip_id JOIN candidates c ON c.id=k.candidate_id
+            JOIN sources s ON s.id=c.source_id JOIN campaigns cp ON cp.id=s.campaign_id
+            LEFT JOIN bounties b ON b.id=s.bounty_id
+            WHERE p.submitted_at IS NULL AND p.posted_at <= ? ORDER BY p.id""",
         (cutoff,)).fetchall()
 
 
 def ending_soon(conn: sqlite3.Connection, today: date) -> list[sqlite3.Row]:
     last = (today + timedelta(days=ENDING_SOON_DAYS)).isoformat()
     return conn.execute(
-        "SELECT name, end_date FROM campaigns WHERE status='active' AND end_date IS NOT NULL"
-        " AND end_date BETWEEN ? AND ? ORDER BY end_date", (today.isoformat(), last)).fetchall()
+        f"SELECT {LABEL} name, b.end_date FROM bounties b JOIN campaigns cp ON cp.id=b.campaign_id"
+        " WHERE b.status='active' AND cp.status='active' AND b.end_date IS NOT NULL"
+        " AND b.end_date BETWEEN ? AND ? ORDER BY b.end_date",
+        (today.isoformat(), last)).fetchall()
 
 
 def _submit_lines(rows, base: str) -> list[str]:

@@ -3,25 +3,29 @@
 {% block content %}
 <h1>Campaigns</h1>
 {% for c in campaigns %}
-<a class="card camp-link" href="/campaigns/{{ c.id }}">
-  <div class="row"><b>{{ c.name }}</b><span class="chip">{{ c.status }}</span>
-    {% if c.category %}<span class="chip">{{ c.category }}</span>{% endif %}</div>
-  <div class="row small">
-    <span class="score">${{ "%.2f"|format(c.per_1k) }} / 1K views</span>
-    <span class="muted">{{ c.sources or 0 }} videos · {{ c.clips or 0 }} clips{% if c.to_review %} · {{ c.to_review }} to review{% endif %}</span>
-    {% if c.end_date %}<span class="muted">ends {{ c.end_date }}</span>{% endif %}
-  </div>
-</a>
+<article class="card">
+  <a class="camp-link row" href="/campaigns/{{ c.id }}"><b>{{ c.name }}</b><span class="chip">{{ c.status }}</span>
+    {% if c.category %}<span class="chip">{{ c.category }}</span>{% endif %}
+    {% if c.to_review %}<span class="chip">{{ c.to_review }} to review</span>{% endif %}</a>
+  {% for b in c.bounties %}
+  <a class="camp-link bounty-row small" href="/campaigns/{{ c.id }}/bounties/{{ b.id }}">
+    <span>↳ {{ b.name }}</span>
+    <span class="muted">${{ "%.0f"|format(b.rate_usd) }}/{{ (b.rate_per_views // 1000)|num }}K · {{ b.sources }} videos · {{ b.clips }} clips{% if b.status != 'active' %} · {{ b.status }}{% endif %}{% if b.end_date %} · ends {{ b.end_date }}{% endif %}</span>
+  </a>
+  {% endfor %}
+</article>
 {% endfor %}
 
 <details class="card" id="add" {{ 'open' if not campaigns or prefill }}>
 <summary>Add campaign</summary>
+<div class="small muted">A campaign is the brand (Man On); a bounty is what pays (episode-4). Adding a bounty to an existing campaign: use the same campaign name, or "Add bounty" on its page.</div>
 <form method="post" action="/campaigns" class="grid2">
   <label>Name <input name="name" required placeholder="e.g. Big Podcast Clips" value="{{ prefill.name or '' }}"></label>
   <label>Category
     <select name="category">{% for cat in ['podcast','interview','gaming','other'] %}<option {{ 'selected' if prefill.category == cat }}>{{ cat }}</option>{% endfor %}</select>
   </label>
   <label>Marketplace <input name="platform" value="clipping.net"></label>
+  <label>First bounty <input name="bounty_name" placeholder="e.g. episode-4" value="{{ prefill.bounty_name or '' }}"></label>
   <label>Pay ($) <input name="rate_usd" type="number" step="0.01" min="0" required placeholder="40" value="{{ prefill.rate_usd or '' }}"></label>
   <label>…per
     <select name="rate_mode">{% for v, t in [('1000','1K views'),('100000','100K views'),('1000000','1M views')] %}<option value="{{ v }}" {{ 'selected' if prefill.rate_mode == v }}>{{ t }}</option>{% endfor %}</select>
@@ -33,7 +37,6 @@
   <label>Required caption text <input name="caption_notes"></label>
   <label>Disclosure <input name="disclosure" value="#ad"></label>
   <label>End date <input name="end_date" type="date"></label>
-  <label>Source links (Drive / channel) <input name="source_links"></label>
   <label>YouTube RSS feeds to watch <input name="watch_feeds" placeholder="https://www.youtube.com/feeds/videos.xml?channel_id=…"></label>
   <label>Notes <input name="notes" value="{{ prefill.notes or '' }}"></label>
   <label class="row" style="grid-template-columns:auto 1fr"><input type="checkbox" name="force" style="width:auto"> Override blocklist</label>

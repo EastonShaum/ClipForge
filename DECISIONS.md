@@ -172,3 +172,12 @@ A webhook is a URL you create in channel settings. It can only post into that on
   - **Queue footage** shows a confirmation page first: files with checkboxes, hours, estimated API cost against the budget left, clips to review and laptop render time. Only **Confirm** creates sources, each pinned to the host that has the file.
 - **Delete campaign:** removes the campaign and all ClipForge rows and files for it (sources, clips and their files, posts, views, jobs, brief screenshots, logos). It never touches your footage, keeps `api_costs` (money spent is history), and refuses while one of its jobs is running.
 - **Theme:** dark by default, with a ◐ switch in the nav that each device remembers (localStorage).
+
+## D27. Campaigns hold bounties
+- **Why:** on Clipping.net a campaign (Man On) pays through several bounties (one per episode), each with its own rate, budget, requirements doc and end date. One ClipForge campaign per bounty duplicated the brand settings and scattered footage.
+- **Campaign** (brand): name, category, marketplace, platforms, logos, tags on every clip, disclosure.
+- **Bounty:** rate, min views, cap, end date, status, extra tags, notes, links, requirement screenshots, footage folder. Sources belong to a bounty (`sources.bounty_id`; `campaign_id` stays for joins). Payouts, the dashboard rows, "ending soon" reminders and auto-ending use the bounty.
+- **Folders:** `Campaigns/<campaign folder>/<bounty>/`, created on the laptop like D26. The campaign folder is its name, or one you already use (Man On → `ManOn`). A default bounty named "main" uses the campaign folder itself. Subfolders inside a bounty folder count (unzipped downloads nest).
+- **Moved files:** if a clipped local file's path disappears and exactly one library file has the same name, the source follows it (`library.relink_moved`). Moving footage into its bounty folder doesn't offer it for clipping (and billing) again.
+- **Migration:** one-time, in `init_db`. Each existing campaign gets one "main" bounty carrying its rate, end date and folder, and its sources and brief screenshots move to it. The old rate columns on `campaigns` stay but are unused.
+- **Adding:** the Add campaign form takes the first bounty. Using an existing campaign's name adds a bounty to it, which is how Scout's "Add as bounty" works. Each campaign page has "Add bounty".

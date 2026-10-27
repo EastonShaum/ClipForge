@@ -2,23 +2,36 @@
 
 import sqlite3
 
-from clipforge.campaigns import estimate_payout, list_campaigns
+from clipforge.bounties import label
+from clipforge.campaigns import effective_per_1k, estimate_payout
 
 POST_VIEWS = """
     SELECT p.id post_id, p.platform, p.clip_id, c.id cand_id, c.hook_type, c.prompt_version_id,
-           s.campaign_id, COALESCE(MAX(v.views), 0) views
+           s.campaign_id, s.bounty_id, COALESCE(MAX(v.views), 0) views
     FROM posts p JOIN clips k ON k.id=p.clip_id JOIN candidates c ON c.id=k.candidate_id
     JOIN sources s ON s.id=c.source_id LEFT JOIN view_snapshots v ON v.post_id=p.id
     GROUP BY p.id
 """
 
 
+def _bounties(conn: sqlite3.Connection) -> dict[int, dict]:
+    out = {}
+    for r in conn.execute("SELECT b.*, c.name campaign FROM bounties b"
+                          " JOIN campaigns c ON c.id=b.campaign_id"):
+        d = dict(r)
+        d["per_1k"] = effective_per_1k(d["rate_usd"], d["rate_per_views"])
+        d["label"] = label(d["campaign"], d["name"])
+        out[d["id"]] = d
+    return out
+
+
 def post_rows(conn: sqlite3.Connection) -> list[dict]:
-    camps = {c["id"]: c for c in list_campaigns(conn)}
+    bounties = _bounties(conn)
     rows = []
     for r in conn.execute(POST_VIEWS):
         d = dict(r)
-        d["earn"] = estimate_payout(camps[d["campaign_id"]], d["views"])
+        b = bounties.get(d["bounty_id"])
+        d["earn"] = estimate_payout(b, d["views"]) if b else 0.0
         rows.append(d)
     return rows
 
@@ -62,15 +75,15 @@ def _merge_views(stats: dict, posts: list[dict], key) -> list[dict]:
 def dashboard(conn: sqlite3.Connection) -> dict:
     posts = post_rows(conn)
     pv_names = {r["id"]: r["name"] for r in conn.execute("SELECT id, name FROM prompt_versions")}
-    camps = list_campaigns(conn)
-    camp_names = {c["id"]: c["name"] for c in camps}
+    bounties = _bounties(conn)
 
-    by_campaign = _merge_views(_review_stats(conn, "s.campaign_id"), posts,
-                               lambda p: p["campaign_id"])
+    # One row per bounty: each has its own rate and view threshold.
+    by_campaign = _merge_views(_review_stats(conn, "s.bounty_id"), posts,
+                               lambda p: p["bounty_id"])
     for r in by_campaign:
-        c = next((c for c in camps if c["id"] == r["name"]), None)
-        best = max((p["views"] for p in posts if p["campaign_id"] == r["name"]), default=0)
-        r["label"] = camp_names.get(r["name"], r["name"])
+        c = bounties.get(r["name"])
+        best = max((p["views"] for p in posts if p["bounty_id"] == r["name"]), default=0)
+        r["label"] = c["label"] if c else r["name"]
         r["per_1k"] = c["per_1k"] if c else 0
         r["min_views"] = c["min_views"] if c else 0
         r["best_views"] = best

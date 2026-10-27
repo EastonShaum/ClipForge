@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block title %}{{ b.name }} · {{ c.name }} · ClipForge{% endblock %}
+{% block content %}
+{% if busy %}<meta http-equiv="refresh" content="20">{% endif %}
+<div class="small"><a href="/campaigns">Campaigns</a> › <a href="/campaigns/{{ c.id }}">{{ c.name }}</a></div>
+<h1>{{ b.name }}</h1>
+<div class="row small">
+  <span class="chip">{{ b.status }}</span>
+  <span class="score">${{ "%.0f"|format(b.rate_usd) }} per {{ b.rate_per_views|num }} views</span>
+  {% if b.min_views %}<span>min {{ b.min_views|num }} views</span>{% endif %}
+  {% if b.cap_usd %}<span>cap {{ b.cap_usd|money }} / clip</span>{% endif %}
+  {% if b.end_date %}<span>ends {{ b.end_date }}</span>{% endif %}
+</div>
+{% set tags = (c.required_tags ~ ' ' ~ b.required_tags)|trim %}
+{% if tags %}<div class="small">Caption tags: {{ tags }}</div>{% endif %}
+{% if b.notes %}<div class="small muted">{{ b.notes }}</div>{% endif %}
+
+<section class="card">
+  <h2>Footage</h2>
+  <div class="small">Put this campaign's videos in <b>{{ library_dir }}\{{ folder or c.media_folder or '…' }}</b> on the laptop. New files show up here within a minute.</div>
+  {% if files %}
+  <div class="small">{{ files|length }} video(s) in the folder · {{ new_files|length }} not queued yet
+    {% set settling = new_files|selectattr('settling')|list %}{% if settling %} · {{ settling|length }} still downloading or copying{% endif %}</div>
+  {% if new_files %}<a class="btn go big" href="/campaigns/{{ c.id }}/bounties/{{ b.id }}/queue">Queue footage for clipping…</a>{% endif %}
+  {% else %}
+  <div class="small muted">No videos found yet. Unzip downloads into the folder; files still downloading are skipped until they finish.</div>
+  {% endif %}
+  <details class="small">
+    <summary>Use a different folder</summary>
+    <form method="post" action="/campaigns/{{ c.id }}/bounties/{{ b.id }}/folder" class="row" style="margin-top:8px">
+      <select name="folder" style="width:auto">
+        {% if b.media_folder not in folders|map(attribute='folder')|list %}<option value="{{ b.media_folder }}" selected>{{ b.media_folder }} (empty)</option>{% endif %}
+        {% for f in folders %}<option value="{{ f.folder }}" {{ 'selected' if b.media_folder == f.folder }}>{{ f.folder }} ({{ f.n }} files)</option>{% endfor %}
+      </select>
+      <button class="small">Save</button>
+    </form>
+  </details>
+  <details class="small">
+    <summary>Add links instead (YouTube, Drive, or a full file path)</summary>
+    <form method="post" action="/sources" style="display:grid;gap:8px;margin-top:8px">
+      <input type="hidden" name="campaign_id" value="{{ c.id }}">
+      <input type="hidden" name="bounty_id" value="{{ b.id }}">
+      <textarea name="urls" required placeholder="https://www.youtube.com/watch?v=…"></textarea>
+      <label>Downloaded files are on
+        <select name="host"><option value="">Auto (C:\… = laptop, /home/… = Pi)</option>
+          {% for h in hosts %}<option value="{{ h }}">{{ h }}</option>{% endfor %}</select>
+      </label>
+      <button class="go small">Queue for clipping</button>
+    </form>
+  </details>
+  {% if sources %}
+  <div class="scroll">
+  <table>
+    <tr><th>Video</th><th>Status</th><th class="n">Clips</th><th></th></tr>
+    {% for s in sources %}
+    <tr>
+      <td>{% if s.url.startswith('http') %}<a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.title or s.url }}</a>{% else %}{{ s.title or s.url.replace('\\','/').split('/')[-1] }}{% endif %}
+        {% if s.last_error and s.status != 'rendered' %}<div class="small status-failed">{{ s.last_error[:160] }}</div>{% endif %}</td>
+      <td class="status-{{ s.status }}">{{ s.status }}</td>
+      <td class="n">{{ s.kept or 0 }}</td>
+      <td>{% if s.status in ['failed','new','fetched','transcribed'] %}
+        <form method="post" action="/sources/{{ s.id }}/retry"><button class="small">Retry</button></form>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+  {% endif %}
+</section>
+
+  {% set br = brief %}
+<section class="card">
+  <details {{ 'open' if docs and not docs[-1].applied_at }}>
+    <summary>Requirements ({{ docs|length }} screenshot{{ '' if docs|length == 1 else 's' }})</summary>
+    <div class="small" style="display:grid;gap:6px;margin-top:8px">
+    {% if br.summary %}<div>{{ br.summary|join(' ') }}</div>{% endif %}
+    {% if br.required_tags %}<div><b>Tags:</b> {{ br.required_tags|join(' ') }}</div>{% endif %}
+    {% if br.platforms %}<div><b>Platforms:</b> {{ br.platforms|join(', ') }}</div>{% endif %}
+    {% if br.length %}<div><b>Length:</b> {{ br.length|join(', ') }}</div>{% endif %}
+    {% if br.end_date %}<div><b>Ends:</b> {{ br.end_date|join(', ') }}</div>{% endif %}
+    {% if br.logo_rule %}<div><b>Logos:</b> {{ br.logo_rule|join(' ') }}</div>{% endif %}
+    {% if br.disclosure %}<div><b>Disclosure the brief asks for:</b> {{ br.disclosure|join(' · ') }} <span class="muted">(add it to the campaign's disclosure yourself; #ad stays)</span></div>{% endif %}
+    {% if br.caption_text %}<div><b>Caption must include:</b> {{ br.caption_text|join(' ') }}</div>{% endif %}
+    {% if br.rules %}<ul style="margin:0;padding-left:18px">{% for r in br.rules %}<li>{{ r }}</li>{% endfor %}</ul>{% endif %}
+    {% if br.footage_links %}<div><b>Footage:</b> {% for u in br.footage_links %}<a href="{{ u }}" target="_blank" rel="noopener">link {{ loop.index }}</a> {% endfor %}</div>{% endif %}
+    {% if docs %}
+    <form method="post" action="/campaigns/{{ c.id }}/bounties/{{ b.id }}/docs/apply"><button class="go small">Apply to bounty</button>
+      <span class="muted">adds tags, end date, links and rules to this bounty (platforms to the campaign); never removes anything</span></form>
+    {% endif %}
+    <div class="row">
+    {% for d in docs %}
+      <form method="post" action="/campaigns/{{ c.id }}/bounties/{{ b.id }}/docs/{{ d.id }}/delete" class="row">
+        <a href="/media/assets/{{ d.path }}" target="_blank" rel="noopener"><img src="/media/assets/{{ d.path }}" alt="requirements screenshot {{ loop.index }}" class="logo-thumb"></a>
+        {% if d.state in ('queued','running') %}<span class="muted">reading…</span>
+        {% elif not d.extracted %}<span class="status-failed">{{ d.state or 'failed' }}</span>{% endif %}
+        <button class="small">×</button>
+      </form>
+    {% endfor %}
+    </div>
+    <form method="post" action="/campaigns/{{ c.id }}/bounties/{{ b.id }}/docs" enctype="multipart/form-data" class="row">
+      <input type="file" name="docs" accept="image/*" multiple required>
+      <button class="small">Upload requirement screenshots</button>
+    </form>
+    </div>
+  </details>
+</section>
+
+<section class="card">
+  <details>
+  <summary>Bounty settings</summary>
+  <form method="post" action="/campaigns/{{ c.id }}/bounties/{{ b.id }}/settings" class="grid2" style="margin-top:8px">
+    <label>Pay ($) <input name="rate_usd" type="number" step="0.01" min="0" value="{{ b.rate_usd }}"></label>
+    <label>…per
+      <select name="rate_mode">{% for v, t in [(1000,'1K views'),(100000,'100K views'),(1000000,'1M views')] %}<option value="{{ v }}" {{ 'selected' if b.rate_per_views == v }}>{{ t }}</option>{% endfor %}</select>
+    </label>
+    <label>Min views to qualify <input name="min_views" type="number" min="0" value="{{ b.min_views }}"></label>
+    <label>Cap per clip ($) <input name="cap_usd" type="number" step="0.01" min="0" value="{{ b.cap_usd if b.cap_usd is not none else '' }}"></label>
+    <label>Ends <input name="end_date" type="date" value="{{ b.end_date or '' }}"></label>
+    <label>Extra caption tags (on top of {{ c.required_tags or 'the campaign\'s' }}) <input name="required_tags" value="{{ b.required_tags }}"></label>
+    <label>Notes <textarea name="notes" rows="3">{{ b.notes }}</textarea></label>
+    <button class="go small">Save</button>
+  </form>
+  {% if not b.end_date %}<div class="small muted">No end date: you won't get an "ending soon" reminder.</div>{% endif %}
+  <form method="post" action="/campaigns/{{ c.id }}/bounties/{{ b.id }}/status" class="row">
+    {% for st in ['active','paused','ended'] if st != b.status %}
+    <button class="small" name="status" value="{{ st }}">Mark {{ st }}</button>
+    {% endfor %}
+  </form>
+  </details>
+</section>
+
+<section class="card danger">
+  <details>
+  <summary>Delete bounty</summary>
+  <div class="small" style="margin:8px 0">Removes this bounty and everything ClipForge made for it: {{ sources|length }} video(s), their clips, posts, view counts and requirement screenshots. Your footage files are not touched. To keep the history, mark it ended instead.</div>
+  <form method="post" action="/campaigns/{{ c.id }}/bounties/{{ b.id }}/delete" onsubmit="return confirm('Delete bounty {{ b.name|e }} and all its clips and posts? This cannot be undone.')">
+    <button class="no">Delete bounty</button>
+  </form>
+  </details>
+</section>
+{% endblock %}

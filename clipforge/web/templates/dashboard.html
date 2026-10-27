@@ -33,9 +33,9 @@
   {% endif %}
 </div>
 
-<h2>Campaigns: progress to payout threshold</h2>
+<h2>Bounties: progress to payout threshold</h2>
 <div class="card scroll"><table>
-  <tr><th>Campaign</th><th class="n">$/1K</th><th class="n">Posts</th><th class="n">Views</th><th>Best clip vs threshold</th><th class="n">Est. $</th></tr>
+  <tr><th>Bounty</th><th class="n">$/1K</th><th class="n">Posts</th><th class="n">Views</th><th>Best clip vs threshold</th><th class="n">Est. $</th></tr>
   {% for r in d.by_campaign %}
   <tr><td>{{ r.label }}</td><td class="n">{{ "%.2f"|format(r.per_1k) }}</td><td class="n">{{ r.posts }}</td><td class="n">{{ r.views|num }}</td>
     <td>{% if r.threshold_progress is not none %}<div class="bar"><i style="width: {{ r.threshold_progress * 100 }}%"></i></div>

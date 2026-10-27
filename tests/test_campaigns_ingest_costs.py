@@ -1,13 +1,13 @@
 import pytest
 
 from clipforge import costs
+from clipforge.bounties import default_bounty, get_bounty
 from clipforge.campaigns import (
     CampaignIn,
     add_campaign,
     blocked_reason,
     effective_per_1k,
     estimate_payout,
-    get_campaign,
 )
 from clipforge.captions import build_caption
 from clipforge.ingest import add_source, source_key
@@ -31,7 +31,7 @@ def test_blocked_campaign_rejected_unless_forced(conn):
 
 
 def test_payout_threshold_and_cap(conn, campaign_id):
-    c = get_campaign(conn, campaign_id)  # $0.40/1K, min 10K, cap $100
+    c = get_bounty(conn, default_bounty(conn, campaign_id))  # $0.40/1K, min 10K, cap $100
     assert estimate_payout(c, 9_999) == 0
     assert estimate_payout(c, 50_000) == pytest.approx(20.0)
     assert estimate_payout(c, 10_000_000) == 100

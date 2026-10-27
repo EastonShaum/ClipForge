@@ -1,4 +1,4 @@
-"""Periodic housekeeping: poll campaign feeds, delete old raw media, end expired campaigns,
+"""Periodic housekeeping: poll campaign feeds, delete old raw media, end expired bounties,
 send posting reminders."""
 
 import logging
@@ -30,7 +30,7 @@ def cleanup_once() -> int:
             conn.execute(f"UPDATE sources SET raw_deleted_at=? WHERE id IN ({marks})",
                          (utcnow(), *ids))
             log.info("cleaned %d sources, freed %.2f GB", len(ids), freed / 1e9)
-        conn.execute("UPDATE campaigns SET status='ended' WHERE status='active' AND end_date"
+        conn.execute("UPDATE bounties SET status='ended' WHERE status='active' AND end_date"
                      " IS NOT NULL AND end_date < date('now')")
         conn.execute("DELETE FROM workers WHERE last_seen < ?", (utc_in(-7 * 86400),))
     return freed

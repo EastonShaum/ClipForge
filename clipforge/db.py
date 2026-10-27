@@ -56,7 +56,25 @@ def tx(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
 # Columns added after a table first shipped. CREATE TABLE IF NOT EXISTS won't add them to an
 # existing DB, so add any that are missing. Additive only: never drop or retype.
 ADDED_COLUMNS = [("campaigns", "logo_path", "TEXT"), ("posts", "submitted_at", "TEXT"),
-                 ("campaigns", "media_folder", "TEXT")]
+                 ("campaigns", "media_folder", "TEXT"), ("sources", "bounty_id", "INTEGER"),
+                 ("campaign_docs", "bounty_id", "INTEGER")]
+
+# One-time: campaigns made before bounties existed become a campaign with one bounty that
+# carries their rate, end date and folder; their sources and brief screenshots move to it.
+BOUNTY_MIGRATION = """
+INSERT INTO bounties (campaign_id, name, rate_usd, rate_per_views, min_views, cap_usd,
+                      end_date, status, media_folder)
+SELECT id, 'main', rate_usd, rate_per_views, min_views, cap_usd, end_date,
+       CASE status WHEN 'ended' THEN 'ended' ELSE 'active' END, media_folder
+FROM campaigns c WHERE NOT EXISTS (SELECT 1 FROM bounties b WHERE b.campaign_id = c.id);
+UPDATE sources SET bounty_id = (SELECT MIN(id) FROM bounties b
+                                WHERE b.campaign_id = sources.campaign_id)
+WHERE bounty_id IS NULL;
+UPDATE campaign_docs SET bounty_id = (SELECT MIN(id) FROM bounties b
+                                      WHERE b.campaign_id = campaign_docs.campaign_id)
+WHERE bounty_id IS NULL;
+INSERT INTO settings_kv (key, value) VALUES ('migrated:bounties', strftime('%Y-%m-%dT%H:%M:%SZ','now'));
+"""
 
 
 def init_db(path: Path | None = None) -> None:
@@ -66,3 +84,5 @@ def init_db(path: Path | None = None) -> None:
             have = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
             if col not in have:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+        if not conn.execute("SELECT 1 FROM settings_kv WHERE key='migrated:bounties'").fetchone():
+            conn.executescript("BEGIN;" + BOUNTY_MIGRATION + "COMMIT;")

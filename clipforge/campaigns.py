@@ -138,26 +138,23 @@ def remove_logo(conn: sqlite3.Connection, campaign_id: int, rel: str | None = No
                  (",".join(keep) or None, campaign_id))
 
 
-def estimate_payout(campaign: dict, views: int) -> float:
-    """Payout for one clip: zero below threshold, linear above, clipped at the cap."""
-    if views < (campaign.get("min_views") or 0):
+def estimate_payout(bounty: dict, views: int) -> float:
+    """Payout for one clip under a bounty (or anything with per_1k, min_views, cap_usd): zero
+    below the threshold, linear above, clipped at the cap."""
+    if views < (bounty.get("min_views") or 0):
         return 0.0
-    pay = views / 1000 * campaign["per_1k"]
-    cap = campaign.get("cap_usd")
+    pay = views / 1000 * bounty["per_1k"]
+    cap = bounty.get("cap_usd")
     return min(pay, cap) if cap else pay
 
 
-def delete_campaign(conn: sqlite3.Connection, campaign_id: int) -> dict:
-    """Delete a campaign with its sources, clips, posts, views, jobs and stored files. Your own
-    footage files (local paths) are never touched; only ClipForge's copies and renders are.
-    API cost rows stay: that money was spent. Refuses while a job for it is running."""
-    s = get_settings()
-    sids = [r[0] for r in conn.execute("SELECT id FROM sources WHERE campaign_id=?",
-                                       (campaign_id,))]
+def _purge(conn: sqlite3.Connection, sids: list[int], doc_ids: list[int]) -> dict:
+    """Delete sources and everything made from them, plus brief screenshots, in one
+    transaction. Refuses while one of their jobs runs. Returns counts and files to remove."""
     marks = ",".join("?" * len(sids)) or "NULL"
     if conn.execute(f"SELECT 1 FROM jobs WHERE state='running' AND source_id IN ({marks})",
                     sids).fetchone():
-        raise ValueError("A job for this campaign is running; try again when it finishes")
+        raise ValueError("A job for this is running; try again when it finishes")
     cands = f"SELECT id FROM candidates WHERE source_id IN ({marks})"
     clips = f"SELECT id FROM clips WHERE candidate_id IN ({cands})"
     posts = f"SELECT id FROM posts WHERE clip_id IN ({clips})"
@@ -166,29 +163,61 @@ def delete_campaign(conn: sqlite3.Connection, campaign_id: int) -> dict:
         "clips": conn.execute(f"SELECT COUNT(*) FROM ({clips})", sids).fetchone()[0],
         "posts": conn.execute(f"SELECT COUNT(*) FROM ({posts})", sids).fetchone()[0],
     }
-    row = conn.execute("SELECT logo_path FROM campaigns WHERE id=?", (campaign_id,)).fetchone()
-    docs = [r[0] for r in conn.execute("SELECT path FROM campaign_docs WHERE campaign_id=?",
-                                       (campaign_id,))]
-    doc_ids = [r[0] for r in conn.execute("SELECT id FROM campaign_docs WHERE campaign_id=?",
-                                          (campaign_id,))]
-    with tx(conn):
-        conn.execute(f"DELETE FROM view_snapshots WHERE post_id IN ({posts})", sids)
-        conn.execute(f"DELETE FROM posts WHERE clip_id IN ({clips})", sids)
-        conn.execute(f"DELETE FROM reviews WHERE clip_id IN ({clips})", sids)
-        conn.execute(f"DELETE FROM jobs WHERE source_id IN ({marks}) OR candidate_id IN"
-                     f" ({cands})", [*sids, *sids])
-        conn.execute(f"DELETE FROM clips WHERE candidate_id IN ({cands})", sids)
-        conn.execute(f"DELETE FROM candidates WHERE source_id IN ({marks})", sids)
-        conn.execute(f"DELETE FROM transcripts WHERE source_id IN ({marks})", sids)
-        conn.execute(f"DELETE FROM sources WHERE id IN ({marks})", sids)
-        for d in doc_ids:
-            conn.execute("DELETE FROM jobs WHERE dedupe_key=?", (f"brief:{d}",))
-        conn.execute("DELETE FROM campaign_docs WHERE campaign_id=?", (campaign_id,))
-        conn.execute("DELETE FROM campaigns WHERE id=?", (campaign_id,))
-    for sid in sids:  # renders and downloads ClipForge made; never the user's own files
+    dmarks = ",".join("?" * len(doc_ids)) or "NULL"
+    docs = [r[0] for r in conn.execute(f"SELECT path FROM campaign_docs WHERE id IN ({dmarks})",
+                                       doc_ids)]
+    conn.execute(f"DELETE FROM view_snapshots WHERE post_id IN ({posts})", sids)
+    conn.execute(f"DELETE FROM posts WHERE clip_id IN ({clips})", sids)
+    conn.execute(f"DELETE FROM reviews WHERE clip_id IN ({clips})", sids)
+    conn.execute(f"DELETE FROM jobs WHERE source_id IN ({marks}) OR candidate_id IN ({cands})",
+                 [*sids, *sids])
+    conn.execute(f"DELETE FROM clips WHERE candidate_id IN ({cands})", sids)
+    conn.execute(f"DELETE FROM candidates WHERE source_id IN ({marks})", sids)
+    conn.execute(f"DELETE FROM transcripts WHERE source_id IN ({marks})", sids)
+    conn.execute(f"DELETE FROM sources WHERE id IN ({marks})", sids)
+    for d in doc_ids:
+        conn.execute("DELETE FROM jobs WHERE dedupe_key=?", (f"brief:{d}",))
+    conn.execute(f"DELETE FROM campaign_docs WHERE id IN ({dmarks})", doc_ids)
+    counts["files"] = docs
+    return counts
+
+
+def _remove_files(sids: list[int], rels: list[str]) -> None:
+    """ClipForge's own renders, downloads and assets; never the user's footage."""
+    s = get_settings()
+    for sid in sids:
         for d in (s.clips_dir / str(sid), s.raw_dir / str(sid)):
             if d.is_dir():
                 shutil.rmtree(d, ignore_errors=True)
-    for rel in [*logo_list(row["logo_path"] if row else None), *docs]:
+    for rel in rels:
         (s.assets_dir / rel).unlink(missing_ok=True)
+
+
+def delete_bounty(conn: sqlite3.Connection, bounty_id: int) -> dict:
+    """Delete one bounty with its sources, clips, posts, views, jobs and brief screenshots.
+    Footage files and api_costs stay."""
+    sids = [r[0] for r in conn.execute("SELECT id FROM sources WHERE bounty_id=?", (bounty_id,))]
+    doc_ids = [r[0] for r in conn.execute("SELECT id FROM campaign_docs WHERE bounty_id=?",
+                                          (bounty_id,))]
+    with tx(conn):
+        counts = _purge(conn, sids, doc_ids)
+        conn.execute("DELETE FROM bounties WHERE id=?", (bounty_id,))
+    _remove_files(sids, counts.pop("files"))
+    return counts
+
+
+def delete_campaign(conn: sqlite3.Connection, campaign_id: int) -> dict:
+    """Delete a campaign with all its bounties, sources, clips, posts, views, jobs and stored
+    files. Your own footage files are never touched; only ClipForge's copies and renders are.
+    API cost rows stay: that money was spent. Refuses while a job for it is running."""
+    sids = [r[0] for r in conn.execute("SELECT id FROM sources WHERE campaign_id=?",
+                                       (campaign_id,))]
+    doc_ids = [r[0] for r in conn.execute("SELECT id FROM campaign_docs WHERE campaign_id=?",
+                                          (campaign_id,))]
+    row = conn.execute("SELECT logo_path FROM campaigns WHERE id=?", (campaign_id,)).fetchone()
+    with tx(conn):
+        counts = _purge(conn, sids, doc_ids)
+        conn.execute("DELETE FROM bounties WHERE campaign_id=?", (campaign_id,))
+        conn.execute("DELETE FROM campaigns WHERE id=?", (campaign_id,))
+    _remove_files(sids, [*counts.pop("files"), *logo_list(row["logo_path"] if row else None)])
     return counts

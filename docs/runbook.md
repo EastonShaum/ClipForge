@@ -31,9 +31,10 @@ yt-dlp breaks when YouTube changes things. Update it with `uv lock --upgrade-pac
 - Gambling/casino campaigns are refused by the blocklist (`CF_BLOCKED_KEYWORDS`, `CF_BLOCKED_CATEGORIES` in `.env`, as JSON lists).
 
 ## Add footage
-- **The usual way:** put the campaign's videos in its folder on the laptop: `C:\Users\Easton\CLipping\Campaigns\<campaign name>\`. Adding a campaign creates that folder within a minute while the laptop worker runs. Unzip Drive downloads there; files still downloading or copying are skipped until they settle (2 min).
-- Then open the campaign → **Queue footage for clipping…** → untick anything that isn't campaign footage → **Confirm and start clipping**. The page shows hours, API cost, clips to review and laptop render time before anything runs. Start with 5–10 videos.
-- The campaign page's **Use a different folder** picks another folder (Man On uses `ManOn`).
+- **The usual way:** put each bounty's videos in its folder on the laptop: `C:\Users\Easton\CLipping\Campaigns\<campaign>\<bounty>\` (Man On episode-4: `Campaigns\ManOn\episode-4\`). Adding a campaign or bounty creates the folder within a minute while the laptop worker runs. Unzip Drive downloads there; files still downloading or copying are skipped until they settle (2 min).
+- Then open Campaigns → the campaign → the bounty → **Queue footage for clipping…** → untick anything that isn't campaign footage → **Confirm and start clipping**. The page shows hours, API cost, clips to review and laptop render time before anything runs. Start with 5–10 videos.
+- The bounty page's **Use a different folder** picks another folder.
+- **New episode:** campaign page → **Add bounty** (name, rate, end date). Requirement screenshots go on the bounty's page.
 - **Links instead:** the campaign page's "Add links instead" box, or the CLI `cf source <campaign_id> <url> [<url>…]`. A full file path also works (`--on <host>` picks the machine).
 
 ## Scout: which bounties to clip

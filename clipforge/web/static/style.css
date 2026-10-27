@@ -69,3 +69,5 @@ nav .theme { margin-left: auto; background: none; color: var(--muted); padding: 
 .file .muted { font-size: 12px }
 .danger { border-color: var(--bad) }
 button:disabled { opacity: .5; cursor: default }
+.bounty-row { display: grid; gap: 2px; padding: 10px 12px; border-radius: 10px; background: var(--chip) }
+.bounty-row:hover { outline: 1px solid var(--accent) }
