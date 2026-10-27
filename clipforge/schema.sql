@@ -105,7 +105,8 @@ CREATE TABLE IF NOT EXISTS posts (
     clip_id         INTEGER NOT NULL REFERENCES clips(id),
     platform        TEXT NOT NULL,                          -- tiktok | youtube | instagram | x
     url             TEXT NOT NULL UNIQUE,
-    posted_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+    posted_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    submitted_at    TEXT                                    -- link handed to the campaign
 );
 
 CREATE TABLE IF NOT EXISTS view_snapshots (

@@ -3,18 +3,9 @@ review → approve → log post → views → dashboard. Offline: fake transcrib
 
 from pathlib import Path
 
-import pytest
-from fastapi.testclient import TestClient
-
-from clipforge.web.app import create_app
 from clipforge.worker import run_local
 
 FIXTURE = Path(__file__).parent / "fixtures" / "sample.mp4"
-
-
-@pytest.fixture
-def client(conn):
-    return TestClient(create_app())
 
 
 def test_full_loop(client, conn, settings):

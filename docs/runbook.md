@@ -43,6 +43,9 @@ yt-dlp breaks when YouTube changes things. Update it with `uv lock --upgrade-pac
 - It's burned into the top-right of every clip rendered **after** the upload. Clips already rendered don't change.
 - Don't add a logo to campaigns whose brief bans extra logos (GFuel does).
 
+## Reminders
+Discord gets a ping at each posting slot (default 17:00 Mountain): which clip to post next and to which platforms. A 09:00 digest lists campaigns ending within 3 days and post links you haven't submitted to the campaign yet. After you submit a link on Clipping.net, tap **Mark submitted** next to it on the Post page; the nag stops. Set a campaign's end date on the Campaigns page. Change times with `CF_POST_SLOTS` / `CF_DIGEST_TIME` in `.env`, then restart the scheduler.
+
 ## Back up the database
 ```bash
 scripts/backup-db.sh     # online-safe .backup into data/backups, keeps 14

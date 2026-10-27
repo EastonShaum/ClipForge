@@ -132,3 +132,12 @@ A webhook is a URL you create in channel settings. It can only post into that on
 - **Deploy rule:** commit, then `systemctl --user restart 'clipforge-*'`. Uncommitted edits on the Pi aren't served to the laptop.
 - **Also:** the worker locates ffmpeg/ffprobe itself (`tools.py`). winget's PATH change doesn't reach windows opened before you sign out and back in. The worker refuses to start if they're missing, instead of failing every job.
 - **Rejected:** GitHub plus `git pull` (needs an account and a push step, and the code leaves your tailnet); syncing folders with Syncthing (it would also sync half-written files, and nothing would check versions).
+
+## D22. Discord reminders for posting, deadlines and link submission
+- **Why:** posting stays manual, so the risks are forgetting: missing a slot, posting to only one of a clip's platforms, a bounty ending with clips unposted, or a posted link never submitted to the campaign (no submission, no pay).
+- **How:** the scheduler calls `reminders.tick` every minute.
+  - **Post slots** (`CF_POST_SLOTS`, local time in `CF_TIMEZONE`): names the next clip and the platforms it still needs. Clips from the campaign ending soonest come first, then the highest score.
+  - **Morning digest** (`CF_DIGEST_TIME`): campaigns ending within 3 days, plus post links not yet marked submitted. It repeats daily until you tap "Mark submitted" on the Post page.
+  - Each reminder fires once (a `settings_kv` key). A slot missed by more than 2 h is dropped, so a reboot doesn't replay old pings.
+- **Timing:** slot times are a starting point, not a science. Sprout Social's 2026 data puts TikTok's best window at Tue–Fri 2–6 pm local. A new account's first views come from a test audience, so consistency matters more than the minute. Re-tune from your own analytics after ~30 posts.
+- **Rejected:** scheduling the posts themselves (no automated posting, hard constraint 2).

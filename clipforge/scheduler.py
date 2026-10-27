@@ -1,10 +1,11 @@
-"""Periodic housekeeping: poll campaign feeds, delete old raw media, end expired campaigns."""
+"""Periodic housekeeping: poll campaign feeds, delete old raw media, end expired campaigns,
+send posting reminders."""
 
 import logging
 import signal
 import time
 
-from clipforge import costs, notify
+from clipforge import costs, notify, reminders
 from clipforge.config import get_settings
 from clipforge.db import session, utc_in, utcnow
 from clipforge.ingest import poll_feeds
@@ -56,7 +57,7 @@ def run(poll_every_s: int = 1800, cleanup_every_s: int = 3600):
 
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
-    last_poll = last_clean = 0.0
+    last_poll = last_clean = last_remind = 0.0
     while not stop:
         now = time.monotonic()
         try:
@@ -66,6 +67,11 @@ def run(poll_every_s: int = 1800, cleanup_every_s: int = 3600):
                 if n:
                     log.info("feed poll added %d sources", n)
                 last_poll = now
+            if now - last_remind >= 60:
+                with session() as conn:
+                    for msg in reminders.tick(conn):
+                        log.info("reminder sent: %s", msg.splitlines()[0])
+                last_remind = now
             if now - last_clean >= cleanup_every_s:
                 cleanup_once()
                 budget_alert()

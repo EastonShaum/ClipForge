@@ -27,6 +27,11 @@
     <input type="file" name="logo" accept="image/png,image/jpeg,image/webp" required>
     <button class="small">{{ 'Replace' if c.logo_path else 'Upload' }} logo</button>
   </form>
+  <form method="post" action="/campaigns/{{ c.id }}/end-date" class="row small">
+    <label class="row" style="display:flex">Ends <input type="date" name="end_date" value="{{ c.end_date or '' }}" style="width:auto"></label>
+    <button class="small">Save</button>
+    {% if not c.end_date %}<span class="muted">No end date: you won't get an "ending soon" reminder.</span>{% endif %}
+  </form>
   <form method="post" action="/campaigns/{{ c.id }}/status" class="row">
     {% for st in ['active','paused','ended'] if st != c.status %}
     <button class="small" name="status" value="{{ st }}">Mark {{ st }}</button>

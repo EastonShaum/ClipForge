@@ -162,6 +162,12 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
             return back("/approved", "That URL is already logged")
         return back("/approved", f"Logged {platform} post")
 
+    @app.post("/posts/{post_id}/submitted")
+    def mark_submitted(post_id: int, conn: DB, undo: str = Form("")):
+        conn.execute("UPDATE posts SET submitted_at=? WHERE id=?",
+                     (None if undo else utcnow(), post_id))
+        return back("/approved", "Marked not submitted" if undo else "Marked submitted")
+
     @app.post("/clips/{clip_id}/unreview")
     def unreview(clip_id: int, conn: DB):
         conn.execute("UPDATE clips SET status='in_review' WHERE id=? AND status IN"
@@ -208,6 +214,11 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
     def campaign_status(cid: int, conn: DB, status: str = Form(...)):
         conn.execute("UPDATE campaigns SET status=? WHERE id=?", (status, cid))
         return back("/campaigns", "Updated")
+
+    @app.post("/campaigns/{cid}/end-date")
+    def campaign_end_date(cid: int, conn: DB, end_date: str = Form("")):
+        conn.execute("UPDATE campaigns SET end_date=? WHERE id=?", (end_date or None, cid))
+        return back("/campaigns", "End date saved" if end_date else "End date cleared")
 
     @app.post("/campaigns/{cid}/logo")
     async def campaign_logo(cid: int, conn: DB, logo: UploadFile = File(...)):

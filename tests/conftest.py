@@ -41,3 +41,11 @@ def campaign_id(conn):
     return add_campaign(conn, CampaignIn(name="Test Pod", category="podcast", rate_usd=40,
                                          rate_per_views=100_000, min_views=10_000, cap_usd=100,
                                          required_tags="@testpod #testcampaign"))
+
+
+@pytest.fixture
+def client(conn):
+    from fastapi.testclient import TestClient
+
+    from clipforge.web.app import create_app
+    return TestClient(create_app())

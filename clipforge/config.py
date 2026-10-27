@@ -67,6 +67,11 @@ class Settings(BaseSettings):
 
     # Notifications
     discord_webhook_url: str = ""
+    # Posting reminders, in local time. One slot = one post per platform per day (warm-up week).
+    # Sprout Social 2026: TikTok's best window is Tue-Fri 2-6 pm (research/hooks-playbook.md §7).
+    timezone: str = "America/Denver"
+    post_slots: list[str] = Field(default_factory=lambda: ["17:00"])
+    digest_time: str = "09:00"  # campaigns ending soon + links not yet submitted
 
     # Remote workers must run the exact commit the Pi runs (they self-update; see update.py).
     require_worker_version: bool = True
