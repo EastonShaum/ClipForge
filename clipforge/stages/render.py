@@ -5,6 +5,7 @@ covers roughly the top 10%, the bottom 25% and a ~120 px strip on the right. Cap
 below center; the hook sits in the upper third.
 """
 
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -121,7 +122,11 @@ def filter_graph(layout: str, ass_path: Path, fonts_dir: Path, logo: bool = Fals
 
 
 def _filter_path(p: Path) -> str:
-    return str(p).replace("\\", "/").replace(":", r"\:").replace("'", r"\'")
+    """Escape a path for a filter option inside -filter_complex. ffmpeg unescapes twice: once
+    for the option list (':' separates options, so 'C:/' must be 'C\\:/') and once for the graph
+    (',' ';' '[' ']' are syntax). Windows drive letters break with only one level."""
+    v = re.sub(r"([\\:'])", r"\\\1", str(p).replace("\\", "/"))
+    return re.sub(r"([\\'\[\],;])", r"\\\1", v)
 
 
 def render(s: Settings, *, media_path: str, words: list[dict], start_ms: int, end_ms: int,
@@ -148,7 +153,10 @@ def render(s: Settings, *, media_path: str, words: list[dict], start_ms: int, en
         str(tmp),
     ]
     t0 = time.monotonic()
-    subprocess.run(cmd, check=True, capture_output=True)
+    proc = subprocess.run(cmd, capture_output=True, text=True, errors="replace")
+    if proc.returncode:
+        # The command line alone is useless for diagnosis; keep ffmpeg's own message.
+        raise RuntimeError(f"ffmpeg exit {proc.returncode}: {proc.stderr.strip()[-800:]}")
     tmp.replace(out_path)  # atomic: a half-written file never looks finished
     return {"path": str(out_path), "size_bytes": out_path.stat().st_size,
             "render_s": round(time.monotonic() - t0, 2)}

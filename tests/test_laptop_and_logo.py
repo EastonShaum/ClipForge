@@ -150,3 +150,19 @@ def test_init_db_adds_new_columns_to_an_old_db(tmp_path):
     init_db(db)  # idempotent
     c = connect(db)
     assert "logo_path" in {r["name"] for r in c.execute("PRAGMA table_info(campaigns)")}
+
+
+def test_filter_path_escapes_windows_drive_for_both_ffmpeg_levels():
+    from clipforge.stages.render import _filter_path
+    assert _filter_path(Path(r"C:\Users\E\cap.ass")) == r"C\\:/Users/E/cap.ass"
+
+
+def test_render_works_when_paths_contain_filter_syntax(settings, tmp_path):
+    # A Linux stand-in for a Windows path: ':' and ',' in the caption and font dirs.
+    from clipforge.stages.render import render
+    work = tmp_path / "C:odd,dir"
+    out = render(settings, media_path=str(FIXTURE), words=[
+        {"w": "hello", "s": 1000, "e": 1400}, {"w": "there", "s": 1500, "e": 1900}],
+        start_ms=1000, end_ms=3000, hook="Hook", out_path=tmp_path / "out.mp4", work=work,
+        disclosure="Paid partnership #ad")
+    assert Path(out["path"]).stat().st_size > 0
