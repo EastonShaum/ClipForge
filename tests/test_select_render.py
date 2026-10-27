@@ -97,3 +97,22 @@ def test_chunk_words_breaks_on_pause():
     w = [{"w": "a", "s": 0, "e": 100}, {"w": "b", "s": 120, "e": 200},
          {"w": "c", "s": 2000, "e": 2100}]
     assert [len(c) for c in render.chunk_words(w, 3)] == [2, 1]
+
+
+def _times(line):
+    a, b = line.split(",")[1:3]
+    ms = [int(h) * 3600000 + int(m) * 60000 + round(float(s) * 1000)
+          for h, m, s in (t.split(":") for t in (a, b))]
+    return ms
+
+
+def test_captions_stay_on_one_line_and_never_overlap():
+    text = ["WHAT", "WE", "WANTED", "CONGRATULATIONS", "EXTRAORDINARILY", "MMM", "WWW", "ok"]
+    w = [{"w": t, "s": i * 300, "e": i * 300 + 250} for i, t in enumerate(text)]
+    for chunk in render.chunk_words(w, 3):
+        assert len(chunk) == 1 or render._line_width(chunk) <= render.CAPTION_MAX_W
+    ass = render.build_ass(w, 0, 3000, "", "Montserrat ExtraBold", 3)
+    caps = [ln for ln in ass.splitlines() if ln.startswith("Dialogue: 0,")]
+    assert all(r"\pos(" in ln and r"\q2" in ln for ln in caps)
+    spans = [_times(ln) for ln in caps]
+    assert all(end <= nxt for (_, end), (nxt, _) in zip(spans, spans[1:], strict=False))

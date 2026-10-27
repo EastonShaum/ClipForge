@@ -120,17 +120,22 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
                     reasons=REJECT_REASONS, msg=msg)
 
     @app.post("/clips/{clip_id}/review")
-    def decide(clip_id: int, conn: DB, decision: str = Form(...), reason: str = Form(""),
-               note: str = Form("")):
+    def decide(clip_id: int, conn: DB, decision: str = Form(...),
+               reason: list[str] = Form([]), note: str = Form("")):
         if decision not in ("approved", "rejected"):
             raise HTTPException(400, "bad decision")
+        # Several presets may be ticked; stored comma-joined, unknown keys dropped.
+        reasons = ",".join(r for r in reason if r in REJECT_REASONS)
+        note = note.strip()
+        if decision == "rejected" and not (reasons or note):
+            return back("/review", "Pick a reason or write a note so the AI can learn from it")
         with tx(conn):
             cur = conn.execute("UPDATE clips SET status=? WHERE id=? AND status='in_review'",
                                (decision, clip_id))
             if cur.rowcount:
                 conn.execute("INSERT INTO reviews (clip_id, decision, reason, note)"
                              " VALUES (?,?,?,?)",
-                             (clip_id, decision, reason or None, note or None))
+                             (clip_id, decision, reasons or None, note or None))
         return back("/review", "Approved" if decision == "approved" else "Rejected")
 
     @app.get("/approved")

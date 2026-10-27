@@ -21,14 +21,16 @@
   </form>
   <details>
     <summary>Reject…</summary>
-    <form method="post" action="/clips/{{ c.id }}/review" class="row" style="margin-top:8px">
+    <form method="post" action="/clips/{{ c.id }}/review" class="reject" style="margin-top:8px">
       <input type="hidden" name="decision" value="rejected">
+      <div class="small muted">Pick any that apply, add your own words, then reject.</div>
       <div class="row">
       {% for key, label in reasons.items() %}
-        <button class="no small" name="reason" value="{{ key }}">{{ label }}</button>
+        <label class="pick"><input type="checkbox" name="reason" value="{{ key }}"><span>{{ label }}</span></label>
       {% endfor %}
       </div>
-      <input name="note" placeholder="Optional note (helps the AI learn)">
+      <textarea name="note" rows="2" placeholder="Your feedback, e.g. &quot;great story but the first 5 s are slow&quot;"></textarea>
+      <button class="no big">Reject</button>
     </form>
   </details>
 </article>

@@ -41,8 +41,11 @@ def test_full_loop(client, conn, settings):
     assert client.get(f"/media/clips/{clips[0]['path']}").status_code == 200
 
     client.post(f"/clips/{clips[0]['id']}/review", data={"decision": "approved"})
-    client.post(f"/clips/{clips[1]['id']}/review", data={"decision": "rejected",
-                                                         "reason": "weak_hook"})
+    r = client.post(f"/clips/{clips[1]['id']}/review", data={"decision": "rejected"})
+    assert "Pick a reason" in r.text  # an empty rejection teaches nothing, so it's refused
+    client.post(f"/clips/{clips[1]['id']}/review", data={
+        "decision": "rejected", "reason": ["weak_hook", "bad_cut", "bogus"],
+        "note": "slow first 5 s"})
     assert "Copy caption" in client.get("/approved").text
 
     r = client.post(f"/clips/{clips[0]['id']}/post",
@@ -57,6 +60,7 @@ def test_full_loop(client, conn, settings):
     from clipforge.feedback import build_feedback
     fb = build_feedback(conn)
     assert "LIKED" in fb and "REJECTED" in fb and "25,000 views" in fb
+    assert "doesn't grab in 2 seconds; starts or ends at a bad spot; slow first 5 s" in fb
 
     health = client.get("/health").json()
     assert health["ok"] and health["jobs"]["render"]["done"] == settings.candidates_keep

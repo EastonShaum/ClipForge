@@ -37,11 +37,36 @@ def _esc(text: str) -> str:
     return text.replace("\\", "").replace("{", "(").replace("}", ")").replace("\n", " ")
 
 
-def chunk_words(words: list[dict], n: int, gap_ms: int = 450) -> list[list[dict]]:
+# Montserrat ExtraBold advance widths per 100 px of font size (measured with Pillow). Used to
+# keep every caption on one line; anything unlisted counts as a wide letter.
+_GLYPH_W = dict(zip("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ',.?!-", (
+    79, 77, 73, 83, 67, 64, 77, 81, 34, 56, 75, 61, 95, 81, 85, 74, 85, 74, 65, 64, 79, 77, 118,
+    74, 69, 68, 68, 40, 60, 60, 70, 61, 65, 63, 67, 65, 29, 24, 28, 28, 60, 30, 39), strict=True))
+CAPTION_SIZE = 92
+ACTIVE_SCALE = 1.0  # colour-only highlight; enlarging the word shifted the whole line sideways
+CAPTION_MAX_W = 820  # px; clear of the frame edge and TikTok's right-hand buttons
+CAPTION_X = 510  # center of the 100..920 band
+
+
+def text_width(text: str, size: int = CAPTION_SIZE) -> float:
+    return sum(_GLYPH_W.get(ch, 85) for ch in text.upper()) * size / 100
+
+
+def _line_width(chunk: list[dict]) -> float:
+    words = [w["w"] for w in chunk]
+    # Worst case: the widest word is the active (enlarged) one.
+    return text_width(" ".join(words)) + max(text_width(w) for w in words) * (ACTIVE_SCALE - 1)
+
+
+def chunk_words(words: list[dict], n: int, gap_ms: int = 450,
+                max_w: float = CAPTION_MAX_W) -> list[list[dict]]:
+    """Group words into caption lines: at most n words, split at pauses and punctuation, and
+    never wider than max_w so a line can't wrap."""
     chunks: list[list[dict]] = []
     cur: list[dict] = []
     for w in words:
-        if cur and (len(cur) >= n or w["s"] - cur[-1]["e"] > gap_ms):
+        if cur and (len(cur) >= n or w["s"] - cur[-1]["e"] > gap_ms
+                    or _line_width([*cur, w]) > max_w):
             chunks.append(cur)
             cur = []
         cur.append(w)
@@ -68,7 +93,8 @@ def build_ass(words: list[dict], clip_start_ms: int, clip_end_ms: int, hook: str
         "BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, "
         "BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
         # Captions: white, thick black outline, bottom-center anchored.
-        f"Style: Cap,{font},92,&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,"
+        f"Style: Cap,{font},{CAPTION_SIZE},&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,"
+        "100,100,0,0,"
         f"1,7,3,2,90,150,{CAPTION_MARGIN_V},1",
         # Hook: black text on a white box, top-center anchored.
         f"Style: Hook,{font},70,&H00111111,&H00111111,&H00FFFFFF,&H00FFFFFF,-1,0,0,0,100,100,0,0,"
@@ -85,16 +111,30 @@ def build_ass(words: list[dict], clip_start_ms: int, clip_end_ms: int, hook: str
     if hook:
         out.append(f"Dialogue: 1,{_ts(0)},{_ts(min(int(HOOK_SECONDS * 1000), dur))},Hook,,0,0,0,,"
                    f"{_esc(hook.upper())}")
-    for chunk in chunk_words(rel, words_per_chunk):
+    chunks = chunk_words(rel, words_per_chunk)
+    starts = [c[0]["s"] for c in chunks[1:]] + [dur + 1000]
+    for chunk, next_start in zip(chunks, starts, strict=True):
+        # Fixed anchor, no wrapping (\q2), shrink only a single word that is too wide alone.
+        fit = min(1.0, CAPTION_MAX_W / _line_width(chunk))
+        pos = (rf"{{\an2\pos({CAPTION_X},{H - CAPTION_MARGIN_V})\q2"
+               rf"\fscx{fit * 100:.0f}\fscy{fit * 100:.0f}}}")
+        big = f"{ACTIVE_SCALE * fit * 100:.0f}"
+        reset = rf"{{\r\fscx{fit * 100:.0f}\fscy{fit * 100:.0f}}}"  # \r drops the fit scale
         for i, w in enumerate(chunk):
             start = w["s"]
             end = chunk[i + 1]["s"] if i + 1 < len(chunk) else w["e"] + 120
+            # Never overlap the next line: two events on screen at once is what made captions
+            # jump (libass stacks colliding lines) or double-draw at a fixed position.
+            end = min(max(end, start + 60), next_start)
+            if end <= start:
+                continue
             parts = []
             for j, other in enumerate(chunk):
                 t = _esc(other["w"].upper())
-                # Active word: yellow (ASS colours are &HBBGGRR) and slightly larger.
-                parts.append(r"{\c&H00E6FF&\fscx108\fscy108}" + t + r"{\r}" if j == i else t)
-            out.append(f"Dialogue: 0,{_ts(start)},{_ts(max(end, start + 60))},Cap,,0,0,0,,"
+                # Active word: yellow (ASS colours are &HBBGGRR).
+                parts.append(rf"{{\c&H00E6FF&\fscx{big}\fscy{big}}}" + t + reset
+                             if j == i else t)
+            out.append(f"Dialogue: 0,{_ts(start)},{_ts(end)},Cap,,0,0,0,,{pos}"
                        + " ".join(parts))
     return "\n".join(out) + "\n"
 

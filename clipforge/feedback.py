@@ -18,6 +18,7 @@ REJECT_REASONS = {
     "too_long": "too long / slow",
     "off_brand": "doesn't fit the campaign",
     "caption_issue": "captions wrong or ugly",
+    "hook_text": "on-screen hook text is wrong or misspelled",
     "other": "other",
 }
 
@@ -47,9 +48,9 @@ def build_feedback(conn: sqlite3.Connection, campaign_id: int | None = None, k: 
         views = f", {r['views']:,} views" if r["views"] else ""
         lines.append(f"- LIKED: \"{r['hook_text']}\" ({r['hook_type']}, {r['secs']}s{views})")
     for r in disliked:
-        why = REJECT_REASONS.get(r["reason"] or "other", r["reason"])
-        note = f" — {r['note']}" if r["note"] else ""
-        lines.append(f"- REJECTED: \"{r['hook_text']}\" ({r['hook_type']}): {why}{note}")
+        why = "; ".join(REJECT_REASONS.get(k, k) for k in (r["reason"] or "").split(",") if k)
+        why = "; ".join(x for x in (why, r["note"]) if x) or "no reason given"
+        lines.append(f"- REJECTED: \"{r['hook_text']}\" ({r['hook_type']}): {why}")
     return "\n".join(lines)
 
 
