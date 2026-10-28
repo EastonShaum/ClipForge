@@ -117,6 +117,7 @@
     <label>Ends <input name="end_date" type="date" value="{{ b.end_date or '' }}"></label>
     <label>Extra caption tags (on top of {{ c.required_tags or 'the campaign\'s' }}) <input name="required_tags" value="{{ b.required_tags }}"></label>
     <label>Notes <textarea name="notes" rows="3">{{ b.notes }}</textarea></label>
+    <label>Clips per video <input name="clips_wanted" type="number" min="1" max="18" value="{{ b.clips_wanted }}"></label>
     <label><input type="checkbox" name="auto_queue" value="true" {{ 'checked' if b.auto_queue }} style="width:auto">
       Auto-queue: clip new videos in the folder as soon as they finish downloading (skips the confirm step)</label>
     <button class="go small">Save</button>

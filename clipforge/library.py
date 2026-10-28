@@ -6,6 +6,7 @@ shows each bounty the files in its folder and lets you pick files to queue. File
 (D20); nothing here moves or deletes them."""
 
 import os
+import re
 import sqlite3
 import subprocess
 import time
@@ -19,6 +20,8 @@ from clipforge.tools import ffprobe
 VIDEO_EXT = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi", ".ts", ".flv"}
 SETTLE_S = 120  # a file modified this recently may still be downloading or unzipping
 RENDER_S_PER_CLIP = 65  # laptop, measured on Man On ep-4 (D6 for the Pi)
+# yt-dlp's in-progress pieces: "x.temp.mp4" (fixup/merge), "x.f137.mp4" (one stream before merge)
+_PIECE = re.compile(r"\.(temp|f(\d|hls|dash|http)[\w-]*)\.\w+$")
 
 _durations: dict[tuple[str, int, float], float | None] = {}  # worker-side probe cache
 
@@ -42,13 +45,17 @@ def scan(root: Path, probe: bool = True) -> list[dict]:
         return out
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+        pieces = [n for n in filenames if _PIECE.search(n) or n.endswith((".part", ".ytdl"))]
         for name in filenames:
             p = Path(dirpath) / name
-            if p.suffix.lower() not in VIDEO_EXT or name.startswith((".", "~")):
+            if (p.suffix.lower() not in VIDEO_EXT or name.startswith((".", "~"))
+                    or name in pieces):
                 continue
             st = p.stat()
             rel = p.relative_to(root).as_posix()
-            settling = time.time() - st.st_mtime < SETTLE_S
+            # Still downloading, or yt-dlp is still merging/repairing it in a sibling file.
+            settling = (time.time() - st.st_mtime < SETTLE_S
+                        or any(n.startswith(p.stem + ".") for n in pieces))
             out.append({"path": str(p), "rel": rel, "size": st.st_size, "mtime": st.st_mtime,
                         "duration_s": None if settling or not probe
                         else _duration(p, st.st_size, st.st_mtime)})
@@ -184,15 +191,16 @@ def newly_ready(conn: sqlite3.Connection, host: str) -> str | None:
     return "\n".join(lines)
 
 
-def estimate(files: list[dict]) -> dict:
+def estimate(files: list[dict], clips_per: int | None = None) -> dict:
     """What queuing these files costs: API dollars, clips to review, laptop render time."""
     s = get_settings()
+    clips_per = clips_per or s.candidates_keep
     hours = sum(f["duration_s"] or 0 for f in files) / 3600
     stt = (costs.stt_cost(s.transcribe_provider, s.transcribe_model, hours * 3600)
            if s.transcribe_provider in ("groq", "openai") else 0.0)
     # ~9K words per hour of speech -> ~12K prompt tokens, plus ~5K out per source.
     sel = (sum(costs.llm_cost(s.select_model, int((f["duration_s"] or 0) / 3600 * 12000) + 3000,
                               5000) for f in files) if s.select_provider == "anthropic" else 0.0)
-    clips = len(files) * s.candidates_keep
+    clips = len(files) * clips_per
     return {"files": len(files), "hours": hours, "usd": stt + sel, "clips": clips,
             "render_h": clips * RENDER_S_PER_CLIP / 3600}

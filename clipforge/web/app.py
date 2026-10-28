@@ -343,13 +343,14 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
                         rate_mode: int = Form(1000), min_views: int = Form(0),
                         cap_usd: str = Form(""), end_date: str = Form(""),
                         required_tags: str = Form(""), notes: str = Form(""),
-                        auto_queue: bool = Form(False)):
+                        auto_queue: bool = Form(False), clips_wanted: int = Form(6)):
         _bounty_or_404(conn, cid, bid)
         conn.execute(
             "UPDATE bounties SET rate_usd=?, rate_per_views=?, min_views=?, cap_usd=?,"
-            " end_date=?, required_tags=?, notes=?, auto_queue=? WHERE id=?",
+            " end_date=?, required_tags=?, notes=?, auto_queue=?, clips_wanted=? WHERE id=?",
             (rate_usd, rate_mode, min_views, float(cap_usd) if cap_usd.strip() else None,
-             end_date or None, required_tags.strip(), notes.strip(), int(auto_queue), bid))
+             end_date or None, required_tags.strip(), notes.strip(), int(auto_queue),
+             _clips(clips_wanted), bid))
         return back(f"/campaigns/{cid}/bounties/{bid}", "Saved")
 
     @app.post("/campaigns/{cid}/bounties/{bid}/status")
@@ -380,11 +381,18 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         b = _bounty_or_404(conn, cid, bid)
         files = [f for f in library.files_for(conn, b) if not f["queued"]]
         ready = [f for f in files if not f["settling"]]
-        return page(request, "queue.html", c=c, b=b, files=files, est=library.estimate(ready),
-                    budget=costs.budget_status(conn), keep=s.candidates_keep)
+        return page(request, "queue.html", c=c, b=b, files=files,
+                    est=library.estimate(ready, b["clips_wanted"]),
+                    budget=costs.budget_status(conn), most=s.candidates_requested,
+                    render_s=library.RENDER_S_PER_CLIP)
+
+    def _clips(n: int) -> int:
+        """Clips to keep per video: at least 1, at most what the selector proposes."""
+        return max(1, min(n, s.candidates_requested))
 
     @app.post("/campaigns/{cid}/bounties/{bid}/queue")
-    def bounty_queue(cid: int, bid: int, conn: DB, path: list[str] = Form([])):
+    def bounty_queue(cid: int, bid: int, conn: DB, path: list[str] = Form([]),
+                     clips: int = Form(6)):
         b = _bounty_or_404(conn, cid, bid)
         known = {f["path"]: f for f in library.files_for(conn, b)}
         added = 0
@@ -393,7 +401,8 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
             if not f or f["queued"] or f["settling"]:
                 continue
             with tx(conn):
-                _, created = add_source(conn, cid, f["path"], f["host"], bounty_id=bid)
+                _, created = add_source(conn, cid, f["path"], f["host"], bounty_id=bid,
+                                        clips=_clips(clips))
             added += created
         return back(f"/campaigns/{cid}/bounties/{bid}",
                     f"Queued {added} video(s) for clipping" if added else "Nothing queued")

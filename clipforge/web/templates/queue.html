@@ -21,8 +21,11 @@
   <div class="small" id="est">
     If you queue everything ready: <b>{{ est.files }} videos, {{ "%.1f"|format(est.hours) }} h</b> of footage →
     about <b>${{ "%.2f"|format(est.usd) }}</b> in API costs (budget left this month ${{ "%.2f"|format(budget.cap - budget.month) }}),
-    up to <b>{{ est.clips }} clips</b> to review ({{ keep }} per video), ~{{ "%.1f"|format(est.render_h) }} h of laptop rendering.
+    up to <b><span id="nclips">{{ est.clips }}</span> clips</b> to review, ~<span id="render">{{ "%.1f"|format(est.render_h) }}</span> h of laptop rendering.
   </div>
+  <label class="small">Clips per video
+    <input type="number" name="clips" id="clips" min="1" max="{{ most }}" value="{{ b.clips_wanted }}" style="width:5em">
+    <span class="muted">the best ones by score; 1–{{ most }}</span></label>
   {% if est.files > 10 %}<div class="small" style="color:var(--warn)">Tip: start with 5–10 videos. Review those clips first so the next batch learns from your feedback.</div>{% endif %}
   <button class="go big" id="go">Confirm and start clipping</button>
   {% endif %}
@@ -34,7 +37,14 @@ function upd() {
   const on = boxes.filter(b => b.checked);
   const btn = document.getElementById('go');
   if (btn) { btn.textContent = on.length ? `Confirm and start clipping (${on.length})` : 'Select at least one video'; btn.disabled = !on.length; }
+  const n = document.getElementById('clips');
+  if (n) {
+    const total = on.length * (parseInt(n.value) || 0);
+    document.getElementById('nclips').textContent = total;
+    document.getElementById('render').textContent = (total * {{ render_s }} / 3600).toFixed(1);
+  }
 }
-boxes.forEach(b => b.addEventListener('change', upd)); upd();
+boxes.forEach(b => b.addEventListener('change', upd));
+document.getElementById('clips')?.addEventListener('input', upd); upd();
 </script>
 {% endblock %}

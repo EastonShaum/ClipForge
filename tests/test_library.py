@@ -23,6 +23,19 @@ def test_scan_skips_partial_and_marks_fresh_files(tmp_path):
     assert files[0]["duration_s"] > 30 and files[1]["duration_s"] is None
 
 
+def test_scan_waits_for_ytdlp_to_finish_repairing(tmp_path):
+    d = tmp_path / "N3on" / "lizzo"
+    d.mkdir(parents=True)
+    for name in ("vod.mp4", "vod.temp.mp4", "clip.f137.mp4"):  # fixup copy, unmerged stream
+        shutil.copy(FIXTURE, d / name)
+        os.utime(d / name, (time.time() - 3600,) * 2)
+    files = library.scan(tmp_path)
+    assert [f["rel"] for f in files] == ["N3on/lizzo/vod.mp4"]
+    assert files[0]["duration_s"] is None  # settling until vod.temp.mp4 is gone
+    (d / "vod.temp.mp4").unlink()
+    assert library.scan(tmp_path)[0]["duration_s"] > 30
+
+
 def test_make_folders_creates_plain_names_only(tmp_path):
     made = library.make_folders(tmp_path, ["ManOn/episode-4", "..", "a/../b", "C:x", "/x", ""])
     assert made == ["ManOn/episode-4"] and (tmp_path / "ManOn" / "episode-4").is_dir()
@@ -155,3 +168,24 @@ def test_auto_queue_bounty_clips_finished_downloads(client, conn, monkeypatch):
     assert "Auto-queued" in sent[0]
     _report(client, [_file("N3on/lizzo/vod.mp4", mins=150)])
     assert conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0] == 1
+
+
+def test_clips_per_video(client, conn, settings):
+    from clipforge.worker import run_local
+    client.post("/campaigns", data={"name": "N3on", "bounty_name": "lizzo", "rate_usd": "150",
+                                    "rate_mode": "100000"})
+    client.post("/campaigns/1/bounties/1/settings",
+                data={"rate_usd": "150", "rate_mode": "100000", "clips_wanted": "2"})
+    _report(client, [_file("N3on/lizzo/a.mp4"), _file("N3on/lizzo/b.mp4")])
+    assert 'name="clips" id="clips" min="1" max="18" value="2"' in client.get(
+        "/campaigns/1/bounties/1/queue").text
+    client.post("/campaigns/1/bounties/1/queue",
+                data={"path": [_file("N3on/lizzo/a.mp4")["path"]], "clips": "40"})
+    assert conn.execute("SELECT clips_wanted FROM sources").fetchone()[0] == 18  # capped
+
+    client.post("/sources", data={"campaign_id": "1", "urls": FIXTURE.resolve().as_uri()})
+    run_local(["fetch", "transcribe", "select", "render"], once=True, idle_s=0)
+    sid = conn.execute("SELECT id FROM sources WHERE url LIKE 'file:%'").fetchone()[0]
+    kept = conn.execute("SELECT COUNT(*) FROM candidates WHERE source_id=? AND kept=1",
+                        (sid,)).fetchone()[0]
+    assert kept == 2  # the bounty's setting

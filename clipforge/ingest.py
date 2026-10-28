@@ -68,10 +68,12 @@ def file_host(conn: sqlite3.Connection, url: str, host: str | None = None) -> st
 
 
 def add_source(conn: sqlite3.Connection, campaign_id: int, url: str,
-               host: str | None = None, bounty_id: int | None = None) -> tuple[int, bool]:
+               host: str | None = None, bounty_id: int | None = None,
+               clips: int | None = None) -> tuple[int, bool]:
     """Add a source and queue its fetch job. Returns (source_id, created).
     host pins the fetch to one machine; local files are pinned automatically (see file_host).
-    Without a bounty_id it goes to the campaign's default bounty."""
+    Without a bounty_id it goes to the campaign's default bounty. clips is how many clips to
+    keep from it (default: the bounty's setting)."""
     if not conn.execute("SELECT 1 FROM campaigns WHERE id=?", (campaign_id,)).fetchone():
         raise ValueError(f"campaign {campaign_id} not found")
     if bounty_id is None:
@@ -86,8 +88,8 @@ def add_source(conn: sqlite3.Connection, campaign_id: int, url: str,
     if existing:
         return existing["id"], False
     sid = conn.execute(
-        "INSERT INTO sources (campaign_id, bounty_id, url, source_key) VALUES (?, ?, ?, ?)",
-        (campaign_id, bounty_id, url, key),
+        "INSERT INTO sources (campaign_id, bounty_id, url, source_key, clips_wanted)"
+        " VALUES (?, ?, ?, ?, ?)", (campaign_id, bounty_id, url, key, clips),
     ).lastrowid
     jobqueue.enqueue(conn, "fetch", f"fetch:{sid}", source_id=sid, affinity_host=pin,
                      priority=50)

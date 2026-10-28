@@ -199,9 +199,12 @@ def apply_result(conn: sqlite3.Connection, s: Settings, job: sqlite3.Row, result
             sid = job["source_id"]
             meta = result["meta"]
             pv_id = result.get("prompt_version_id")
-            src = conn.execute("SELECT media_host FROM sources WHERE id=?", (sid,)).fetchone()
+            src = conn.execute(
+                "SELECT s.media_host, COALESCE(s.clips_wanted, b.clips_wanted, ?) keep"
+                " FROM sources s LEFT JOIN bounties b ON b.id=s.bounty_id WHERE s.id=?",
+                (s.candidates_keep, sid)).fetchone()
             for rank, c in enumerate(result["candidates"], start=1):
-                kept = rank <= s.candidates_keep
+                kept = rank <= src["keep"]
                 cur = conn.execute(
                     """INSERT INTO candidates (source_id, start_ms, end_ms, hook_text, hook_type,
                            title, rationale, score, rank, kept, prompt_version_id)
