@@ -10,3 +10,6 @@ __pycache__/
 test.txt
 .clipforge-version
 Live/
+
+# Claude Code personal settings
+.claude/settings.local.json
