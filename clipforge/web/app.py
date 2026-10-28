@@ -342,13 +342,14 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
     def bounty_settings(cid: int, bid: int, conn: DB, rate_usd: float = Form(0),
                         rate_mode: int = Form(1000), min_views: int = Form(0),
                         cap_usd: str = Form(""), end_date: str = Form(""),
-                        required_tags: str = Form(""), notes: str = Form("")):
+                        required_tags: str = Form(""), notes: str = Form(""),
+                        auto_queue: bool = Form(False)):
         _bounty_or_404(conn, cid, bid)
         conn.execute(
             "UPDATE bounties SET rate_usd=?, rate_per_views=?, min_views=?, cap_usd=?,"
-            " end_date=?, required_tags=?, notes=? WHERE id=?",
+            " end_date=?, required_tags=?, notes=?, auto_queue=? WHERE id=?",
             (rate_usd, rate_mode, min_views, float(cap_usd) if cap_usd.strip() else None,
-             end_date or None, required_tags.strip(), notes.strip(), bid))
+             end_date or None, required_tags.strip(), notes.strip(), int(auto_queue), bid))
         return back(f"/campaigns/{cid}/bounties/{bid}", "Saved")
 
     @app.post("/campaigns/{cid}/bounties/{bid}/status")

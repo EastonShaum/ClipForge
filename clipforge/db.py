@@ -57,7 +57,8 @@ def tx(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
 # existing DB, so add any that are missing. Additive only: never drop or retype.
 ADDED_COLUMNS = [("campaigns", "logo_path", "TEXT"), ("posts", "submitted_at", "TEXT"),
                  ("campaigns", "media_folder", "TEXT"), ("sources", "bounty_id", "INTEGER"),
-                 ("campaign_docs", "bounty_id", "INTEGER")]
+                 ("campaign_docs", "bounty_id", "INTEGER"),
+                 ("bounties", "auto_queue", "INTEGER NOT NULL DEFAULT 0")]
 
 # One-time: campaigns made before bounties existed become a campaign with one bounty that
 # carries their rate, end date and folder; their sources and brief screenshots move to it.

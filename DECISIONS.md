@@ -181,3 +181,6 @@ A webhook is a URL you create in channel settings. It can only post into that on
 - **Moved files:** if a clipped local file's path disappears and exactly one library file has the same name, the source follows it (`library.relink_moved`). Moving footage into its bounty folder doesn't offer it for clipping (and billing) again.
 - **Migration:** one-time, in `init_db`. Each existing campaign gets one "main" bounty carrying its rate, end date and folder, and its sources and brief screenshots move to it. The old rate columns on `campaigns` stay but are unused.
 - **Adding:** the Add campaign form takes the first bounty. Using an existing campaign's name adds a bounty to it, which is how Scout's "Add as bounty" works. Each campaign page has "Add bounty".
+
+## D28. Footage-ready pings and opt-in auto-queue (2026-10-28)
+When the laptop reports a finished video (settled, readable) in an active bounty's folder, the Pi posts one Discord message per batch (keyed in settings_kv, so never repeated). A bounty with **auto_queue** on also queues those files for clipping, skipping the confirm step. Off by default: the confirm step (D26) stays the norm, and auto-queue is for footage you chose to download into that folder, like an overnight Kick VOD. Spend is still bounded by the monthly budget cap.

@@ -136,3 +136,22 @@ def test_finished_download_pings_discord_once(client, conn, monkeypatch):
     assert "/campaigns/1/bounties/1/queue" in sent[0]
     _report(client, [_file("N3on/lizzo/vod.mp4", mins=150)])
     assert len(sent) == 1  # announced once
+
+
+def test_auto_queue_bounty_clips_finished_downloads(client, conn, monkeypatch):
+    from clipforge import notify
+    sent = []
+    monkeypatch.setattr(notify, "discord", sent.append)
+    client.post("/campaigns", data={"name": "N3on", "bounty_name": "lizzo", "rate_usd": "150",
+                                    "rate_mode": "100000"})
+    client.post("/campaigns/1/bounties/1/settings",
+                data={"rate_usd": "150", "rate_mode": "100000", "auto_queue": "true"})
+    assert 'name="auto_queue" value="true" checked' in client.get("/campaigns/1/bounties/1").text
+    _report(client, [_file("N3on/lizzo/vod.mp4", age=5)])
+    assert conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0] == 0  # still downloading
+    _report(client, [_file("N3on/lizzo/vod.mp4", mins=150)])
+    src = conn.execute("SELECT * FROM sources").fetchone()
+    assert src["bounty_id"] == 1 and src["url"].endswith("vod.mp4")
+    assert "Auto-queued" in sent[0]
+    _report(client, [_file("N3on/lizzo/vod.mp4", mins=150)])
+    assert conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0] == 1

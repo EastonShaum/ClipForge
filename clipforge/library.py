@@ -146,11 +146,14 @@ def relink_moved(conn: sqlite3.Connection, host: str) -> int:
 
 def newly_ready(conn: sqlite3.Connection, host: str) -> str | None:
     """A Discord message for videos that just finished landing in an active bounty's folder
-    (e.g. an overnight VOD download), or None. Each file is announced once (settings_kv)."""
+    (e.g. an overnight VOD download), or None. Each file is announced once (settings_kv).
+    A bounty with auto_queue on gets them queued for clipping right away."""
     from clipforge.bounties import label
+    from clipforge.ingest import add_source
 
     bounties = conn.execute(
-        "SELECT b.id, b.campaign_id, b.name, b.media_folder, c.name campaign FROM bounties b"
+        "SELECT b.id, b.campaign_id, b.name, b.media_folder, b.auto_queue, c.name campaign"
+        " FROM bounties b"
         " JOIN campaigns c ON c.id=b.campaign_id WHERE b.status='active' AND c.status='active'"
         " AND b.media_folder IS NOT NULL ORDER BY length(b.media_folder) DESC").fetchall()
     ready: dict[int, list[dict]] = {}
@@ -171,8 +174,13 @@ def newly_ready(conn: sqlite3.Connection, host: str) -> str | None:
         hours = sum(f["duration_s"] or 0 for f in fs) / 3600
         lines.append(f"🎬 **New footage ready: {label(b['campaign'], b['name'])}**: "
                      f"{', '.join(f['rel'].rsplit('/', 1)[-1] for f in fs)} ({hours:.1f} h)")
-        lines.append(f"Queue it for clipping: {base}/campaigns/{b['campaign_id']}"
-                     f"/bounties/{b['id']}/queue")
+        if b["auto_queue"]:
+            for f in fs:
+                add_source(conn, b["campaign_id"], f["path"], f["host"], bounty_id=b["id"])
+            lines.append(f"Auto-queued for clipping. Clips will show up in {base}/review")
+        else:
+            lines.append(f"Queue it for clipping: {base}/campaigns/{b['campaign_id']}"
+                         f"/bounties/{b['id']}/queue")
     return "\n".join(lines)
 
 
