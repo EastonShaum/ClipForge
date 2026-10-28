@@ -1,28 +1,29 @@
 {% extends "base.html" %}
-{% block title %}Review ({{ clips|length }}) · ClipForge{% endblock %}
+{% block title %}Review ({{ clips|length }}) · {{ b.name }} · ClipForge{% endblock %}
 {% block content %}
-<h1>Review <span class="muted">{{ clips|length }} waiting</span></h1>
+{% include "_bounty_head.html" %}
 {% for c in clips %}
 <article class="card" id="clip{{ c.id }}">
   <div class="row">
     <span class="score">{{ "%.0f"|format(c.score) }}</span>
     <span class="chip">{{ c.hook_type.replace('_',' ') }}</span>
     <span class="chip">{{ (c.end_ms - c.start_ms)|secs }}</span>
-    <span class="chip">{{ c.campaign }}</span>
   </div>
   <div class="hook">{{ c.hook_text }}</div>
   <video src="/media/clips/{{ c.path }}" controls playsinline preload="metadata"></video>
   <div class="small muted">{{ c.rationale }}</div>
-  <div class="small muted">From <a href="{{ c.src_url }}" target="_blank" rel="noopener">{{ c.src_title or c.src_url }}</a>
+  <div class="small muted">From {% if c.src_url.startswith('http') %}<a href="{{ c.src_url }}" target="_blank" rel="noopener">{{ c.src_title or c.src_url }}</a>{% else %}{{ c.src_title or c.src_url }}{% endif %}
     at {{ c.start_ms|mmss }} · {{ c.prompt or "no prompt" }}</div>
   <form method="post" action="/clips/{{ c.id }}/review" class="row">
     <input type="hidden" name="decision" value="approved">
+    <input type="hidden" name="next" value="{{ here }}">
     <button class="go big">Approve</button>
   </form>
   <details>
     <summary>Reject…</summary>
     <form method="post" action="/clips/{{ c.id }}/review" class="reject" style="margin-top:8px">
       <input type="hidden" name="decision" value="rejected">
+      <input type="hidden" name="next" value="{{ here }}">
       <div class="small muted">Pick any that apply, add your own words, then reject.</div>
       <div class="row">
       {% for key, label in reasons.items() %}
@@ -35,6 +36,8 @@
   </details>
 </article>
 {% else %}
-<div class="card empty">Nothing to review. Queue footage on a <a href="/campaigns">campaign</a> page; you'll get a Discord ping when clips are ready.</div>
+<div class="card empty">Nothing to review for this bounty.
+  {% if tabs.approved %}<a href="/campaigns/{{ c.id }}/bounties/{{ b.id }}/post">{{ tabs.approved }} approved clip(s) ready to post.</a>
+  {% else %}Queue footage under <a href="/campaigns/{{ c.id }}/bounties/{{ b.id }}">Footage &amp; settings</a>; you'll get a Discord ping when clips are ready.{% endif %}</div>
 {% endfor %}
 {% endblock %}

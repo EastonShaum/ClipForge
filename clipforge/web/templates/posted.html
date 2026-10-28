@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Posted · {{ b.name }} · ClipForge{% endblock %}
+{% block content %}
+{% include "_bounty_head.html" %}
+<p class="small muted">Each post: fix its link, mark it submitted on the campaign site, and log views as they grow (each entry is a snapshot).
+  {% if b.min_views %}Pays from {{ b.min_views|num }} views.{% endif %}</p>
+{% for c in clips %}
+<article class="card" id="clip{{ c.id }}">
+  <div class="row"><span class="hook" style="flex:1">{{ c.hook_text }}</span>
+    <a class="small" href="/media/clips/{{ c.path }}" target="_blank" rel="noopener">watch</a></div>
+  {% for p in c.posts %}
+  <div class="post" id="post{{ p.id }}">
+    <div class="row small">
+      <span class="chip">{{ p.platform }}</span>
+      <a href="{{ p.url }}" target="_blank" rel="noopener">open</a>
+      <span class="score">{{ p.views|num if p.views is not none else '–' }} views</span>
+      {% if b.min_views and (p.views or 0) >= b.min_views %}<span class="chip">qualifies</span>{% endif %}
+      <span class="muted">posted {{ p.posted_at[:10] }}{% if p.checked %} · checked {{ p.checked[:16].replace('T',' ') }}{% endif %}</span>
+    </div>
+    <form method="post" action="/posts/{{ p.id }}/views" class="row">
+      <input type="hidden" name="next" value="{{ here }}#post{{ p.id }}">
+      <input name="views" type="number" min="0" inputmode="numeric" placeholder="Views" required style="flex:1">
+      <input name="likes" type="number" min="0" inputmode="numeric" placeholder="Likes" style="flex:1">
+      <button class="go">Save views</button>
+    </form>
+    <form method="post" action="/posts/{{ p.id }}/submitted" class="row small">
+      <input type="hidden" name="next" value="{{ here }}#post{{ p.id }}">
+      {% if p.submitted_at %}<span class="chip">submitted ✓</span><button class="small" name="undo" value="1">undo</button>
+      {% else %}<button class="go small">Mark submitted</button>{% endif %}
+    </form>
+    <details class="small">
+      <summary>Edit link</summary>
+      <form method="post" action="/posts/{{ p.id }}/edit" class="grid2" style="margin-top:8px">
+        <input type="hidden" name="next" value="{{ here }}#post{{ p.id }}">
+        <select name="platform">{% for pl in platforms %}<option {{ 'selected' if pl == p.platform }}>{{ pl }}</option>{% endfor %}</select>
+        <input name="url" type="url" value="{{ p.url }}" required>
+        <button class="small">Save</button>
+      </form>
+      <form method="post" action="/posts/{{ p.id }}/delete" onsubmit="return confirm('Remove this {{ p.platform }} post and its view history?')">
+        <input type="hidden" name="next" value="{{ here }}">
+        <button class="no small">Remove post</button>
+      </form>
+    </details>
+  </div>
+  {% endfor %}
+  <details class="small" {{ 'open' if c.todo }}>
+    <summary>Add another link{% if c.todo %} (not posted yet: {{ c.todo|join(', ') }}){% endif %}</summary>
+    <form method="post" action="/clips/{{ c.id }}/post" class="grid2" style="margin-top:8px">
+      <input type="hidden" name="next" value="{{ here }}#clip{{ c.id }}">
+      <select name="platform">{% for pl in platforms %}<option {{ 'selected' if c.todo and pl == c.todo[0] }}>{{ pl }}</option>{% endfor %}</select>
+      <input name="url" type="url" placeholder="https://www.youtube.com/shorts/…" required>
+      <button class="go small">Add link</button>
+    </form>
+  </details>
+</article>
+{% else %}
+<div class="card empty">No posts logged for this bounty yet. Log them on the <a href="/campaigns/{{ c.id }}/bounties/{{ b.id }}/post">Post</a> tab.</div>
+{% endfor %}
+{% endblock %}

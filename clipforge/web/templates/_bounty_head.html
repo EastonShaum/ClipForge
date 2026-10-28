@@ -1,0 +1,9 @@
+<div class="small"><a href="/campaigns">Campaigns</a> › <a href="/campaigns/{{ c.id }}">{{ c.name }}</a></div>
+<h1>{{ b.name }}</h1>
+{% set base = "/campaigns/" ~ c.id ~ "/bounties/" ~ b.id %}
+<div class="tabs">
+  <a href="{{ base }}/review" class="{{ 'on' if active == 'review' }}">Review{% if tabs.in_review %} <span class="count">{{ tabs.in_review }}</span>{% endif %}</a>
+  <a href="{{ base }}/post" class="{{ 'on' if active == 'post' }}">Post{% if tabs.approved %} <span class="count">{{ tabs.approved }}</span>{% endif %}</a>
+  <a href="{{ base }}/posted" class="{{ 'on' if active == 'posted' }}">Posted &amp; views{% if tabs.posted %} <span class="count">{{ tabs.posted }}</span>{% endif %}</a>
+  <a href="{{ base }}" class="{{ 'on' if active == 'bounty' }}">Footage &amp; settings</a>
+</div>

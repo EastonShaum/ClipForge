@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from starlette.datastructures import UploadFile as StarletteUpload
 
 from clipforge import analytics, briefs, costs, jobqueue, library, notify, pipeline, scout
-from clipforge.bounties import BountyIn, add_bounty, get_bounty, list_bounties
+from clipforge.bounties import BountyIn, add_bounty, clip_counts, get_bounty, list_bounties
 from clipforge.campaigns import (
     CampaignIn,
     add_campaign,
@@ -91,7 +91,9 @@ def back(url: str, msg: str = "") -> RedirectResponse:
     return RedirectResponse(url + (f"#{anchor}" if anchor else ""), status_code=303)
 
 
-def _clip_rows(conn, status: str, limit: int = 50) -> list[dict]:
+def _clip_rows(conn, status: str, bounty_id: int, limit: int = 100) -> list[dict]:
+    """One bounty's clips at one stage, best first, each with its posts (latest views
+    included) and the allowed platforms it hasn't been posted to yet."""
     rows = conn.execute(
         """SELECT k.*, c.hook_text, c.hook_type, c.title, c.rationale, c.score, c.start_ms,
                   c.end_ms, c.source_id, s.title src_title, s.url src_url, cp.name campaign,
@@ -99,14 +101,36 @@ def _clip_rows(conn, status: str, limit: int = 50) -> list[dict]:
            FROM clips k JOIN candidates c ON c.id=k.candidate_id JOIN sources s ON s.id=c.source_id
            JOIN campaigns cp ON cp.id=s.campaign_id
            LEFT JOIN prompt_versions pv ON pv.id=c.prompt_version_id
-           WHERE k.status=? ORDER BY c.score DESC, k.id LIMIT ?""", (status, limit)).fetchall()
+           WHERE k.status=? AND s.bounty_id=? ORDER BY c.score DESC, k.id LIMIT ?""",
+        (status, bounty_id, limit)).fetchall()
     out = []
     for r in rows:
         d = dict(r)
         d["posts"] = [dict(p) for p in conn.execute(
-            "SELECT * FROM posts WHERE clip_id=? ORDER BY id", (r["id"],))]
+            """SELECT p.*,
+                      (SELECT views FROM view_snapshots v WHERE v.post_id=p.id
+                       ORDER BY v.taken_at DESC, v.id DESC LIMIT 1) views,
+                      (SELECT MAX(taken_at) FROM view_snapshots v WHERE v.post_id=p.id) checked
+               FROM posts p WHERE clip_id=? ORDER BY id""", (r["id"],))]
+        done = {p["platform"] for p in d["posts"]}
+        d["todo"] = [p.strip() for p in r["allowed_platforms"].split(",")
+                     if p.strip() and p.strip() not in done]
         out.append(d)
     return out
+
+
+def _bounty_with(conn, status: str) -> sqlite3.Row | None:
+    """The bounty with the most clips at this stage (for the old top-level links)."""
+    return conn.execute(
+        "SELECT s.campaign_id cid, s.bounty_id bid, COUNT(*) n FROM clips k"
+        " JOIN candidates c ON c.id=k.candidate_id JOIN sources s ON s.id=c.source_id"
+        " WHERE k.status=? AND s.bounty_id IS NOT NULL GROUP BY s.bounty_id"
+        " ORDER BY n DESC LIMIT 1", (status,)).fetchone()
+
+
+def _next(url: str, default: str) -> str:
+    """Where a form goes back to: a local path only."""
+    return url if url.startswith("/") and not url.startswith("//") else default
 
 
 def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads best
@@ -127,26 +151,65 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
                                                                  s.laptop_grace_s),
         }
 
-    # ---------- review ----------
+    # ---------- review → post → posted, inside each bounty ----------
     @app.get("/")
     def home():
-        return RedirectResponse("/review")
+        return RedirectResponse("/campaigns")
 
+    # The old top-level pages (and older Discord links) jump to the bounty that needs it.
     @app.get("/review")
-    def review(request: Request, conn: DB, msg: str = ""):
-        return page(request, "review.html", clips=_clip_rows(conn, "in_review"),
+    def review_any(conn: DB, msg: str = ""):
+        b = _bounty_with(conn, "in_review")
+        return back(f"/campaigns/{b['cid']}/bounties/{b['bid']}/review" if b
+                    else "/campaigns", msg or ("" if b else "Nothing waiting for review"))
+
+    @app.get("/approved")
+    def approved_any(conn: DB, msg: str = ""):
+        b = _bounty_with(conn, "approved") or _bounty_with(conn, "posted")
+        return back(f"/campaigns/{b['cid']}/bounties/{b['bid']}/post" if b
+                    else "/campaigns", msg or ("" if b else "Nothing approved yet"))
+
+    @app.get("/posts")
+    def posts_any(conn: DB, msg: str = ""):
+        b = _bounty_with(conn, "posted")
+        return back(f"/campaigns/{b['cid']}/bounties/{b['bid']}/posted" if b
+                    else "/campaigns", msg or ("" if b else "No posts logged yet"))
+
+    def _tab(request: Request, conn, cid: int, bid: int, name: str, **ctx):
+        c = _camp_or_404(conn, cid)
+        b = _bounty_or_404(conn, cid, bid)
+        return page(request, f"{name}.html", c=c, b=b, tabs=clip_counts(conn, bid),
+                    here=f"/campaigns/{cid}/bounties/{bid}/{name}", **ctx)
+
+    @app.get("/campaigns/{cid}/bounties/{bid}/review")
+    def bounty_review(request: Request, cid: int, bid: int, conn: DB, msg: str = ""):
+        return _tab(request, conn, cid, bid, "review", clips=_clip_rows(conn, "in_review", bid),
                     reasons=REJECT_REASONS, msg=msg)
+
+    @app.get("/campaigns/{cid}/bounties/{bid}/post")
+    def bounty_post(request: Request, cid: int, bid: int, conn: DB, msg: str = ""):
+        # Approved clips, plus posted ones that still have an allowed platform to go.
+        clips = _clip_rows(conn, "approved", bid) + [
+            r for r in _clip_rows(conn, "posted", bid) if r["todo"]]
+        return _tab(request, conn, cid, bid, "post", clips=clips, platforms=PLATFORMS,
+                    reminders=PLATFORM_REMINDER, msg=msg)
+
+    @app.get("/campaigns/{cid}/bounties/{bid}/posted")
+    def bounty_posted(request: Request, cid: int, bid: int, conn: DB, msg: str = ""):
+        return _tab(request, conn, cid, bid, "posted", clips=_clip_rows(conn, "posted", bid),
+                    platforms=PLATFORMS, msg=msg)
 
     @app.post("/clips/{clip_id}/review")
     def decide(clip_id: int, conn: DB, decision: str = Form(...),
-               reason: list[str] = Form([]), note: str = Form("")):
+               reason: list[str] = Form([]), note: str = Form(""), next: str = Form("")):
+        to = _next(next, "/review")
         if decision not in ("approved", "rejected"):
             raise HTTPException(400, "bad decision")
         # Several presets may be ticked; stored comma-joined, unknown keys dropped.
         reasons = ",".join(r for r in reason if r in REJECT_REASONS)
         note = note.strip()
         if decision == "rejected" and not (reasons or note):
-            return back("/review", "Pick a reason or write a note so the AI can learn from it")
+            return back(to, "Pick a reason or write a note so the AI can learn from it")
         with tx(conn):
             cur = conn.execute("UPDATE clips SET status=? WHERE id=? AND status='in_review'",
                                (decision, clip_id))
@@ -154,61 +217,79 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
                 conn.execute("INSERT INTO reviews (clip_id, decision, reason, note)"
                              " VALUES (?,?,?,?)",
                              (clip_id, decision, reasons or None, note or None))
-        return back("/review", "Approved" if decision == "approved" else "Rejected")
-
-    @app.get("/approved")
-    def approved(request: Request, conn: DB, msg: str = ""):
-        return page(request, "approved.html", clips=_clip_rows(conn, "approved", 100),
-                    posted=_clip_rows(conn, "posted", 30), platforms=PLATFORMS,
-                    reminders=PLATFORM_REMINDER, msg=msg)
+        return back(to, "Approved" if decision == "approved" else "Rejected")
 
     @app.post("/clips/{clip_id}/caption")
-    def edit_caption(clip_id: int, conn: DB, caption: str = Form(...)):
+    def edit_caption(clip_id: int, conn: DB, caption: str = Form(...), next: str = Form("")):
         conn.execute("UPDATE clips SET caption=? WHERE id=?", (caption, clip_id))
-        return back("/approved", "Caption saved")
+        return back(_next(next, "/approved") + f"#clip{clip_id}", "Caption saved")
+
+    def _post_fields(platform: str, url: str) -> str | None:
+        """The problem with a platform + URL pair, or None if it's fine."""
+        if platform not in PLATFORMS:
+            return "Pick a platform"
+        if not url.strip().startswith("http"):
+            return "Paste the full post URL (starting with https://)"
+        return None
 
     @app.post("/clips/{clip_id}/post")
-    def log_post(clip_id: int, conn: DB, platform: str = Form(...), url: str = Form(...)):
-        if platform not in PLATFORMS or not url.startswith("http"):
-            return back("/approved", "Pick a platform and paste the full post URL")
+    def log_post(clip_id: int, conn: DB, platform: str = Form(...), url: str = Form(...),
+                 next: str = Form("")):
+        to = _next(next, "/approved")
+        if err := _post_fields(platform, url):
+            return back(to, err)
         try:
             with tx(conn):
                 conn.execute("INSERT INTO posts (clip_id, platform, url) VALUES (?,?,?)",
                              (clip_id, platform, url.strip()))
                 conn.execute("UPDATE clips SET status='posted' WHERE id=?", (clip_id,))
         except sqlite3.IntegrityError:
-            return back("/approved", "That URL is already logged")
-        return back("/approved", f"Logged {platform} post")
+            return back(to, "That URL is already logged")
+        return back(to, f"Logged {platform} post")
+
+    @app.post("/posts/{post_id}/edit")
+    def edit_post(post_id: int, conn: DB, platform: str = Form(...), url: str = Form(...),
+                  next: str = Form("")):
+        to = _next(next, "/posts")
+        if err := _post_fields(platform, url):
+            return back(to, err)
+        try:
+            conn.execute("UPDATE posts SET platform=?, url=? WHERE id=?",
+                         (platform, url.strip(), post_id))
+        except sqlite3.IntegrityError:
+            return back(to, "That URL is already logged on another post")
+        return back(to, "Post updated")
+
+    @app.post("/posts/{post_id}/delete")
+    def delete_post(post_id: int, conn: DB, next: str = Form("")):
+        p = conn.execute("SELECT clip_id FROM posts WHERE id=?", (post_id,)).fetchone()
+        if p:
+            with tx(conn):
+                conn.execute("DELETE FROM view_snapshots WHERE post_id=?", (post_id,))
+                conn.execute("DELETE FROM posts WHERE id=?", (post_id,))
+                # A clip with no posts left goes back to "ready to post".
+                conn.execute("UPDATE clips SET status='approved' WHERE id=? AND NOT EXISTS"
+                             " (SELECT 1 FROM posts WHERE clip_id=?)", (p["clip_id"], p["clip_id"]))
+        return back(_next(next, "/posts"), "Post removed")
 
     @app.post("/posts/{post_id}/submitted")
-    def mark_submitted(post_id: int, conn: DB, undo: str = Form("")):
+    def mark_submitted(post_id: int, conn: DB, undo: str = Form(""), next: str = Form("")):
         conn.execute("UPDATE posts SET submitted_at=? WHERE id=?",
                      (None if undo else utcnow(), post_id))
-        return back("/approved", "Marked not submitted" if undo else "Marked submitted")
+        return back(_next(next, "/posts"), "Marked not submitted" if undo else "Marked submitted")
 
     @app.post("/clips/{clip_id}/unreview")
-    def unreview(clip_id: int, conn: DB):
+    def unreview(clip_id: int, conn: DB, next: str = Form("")):
         conn.execute("UPDATE clips SET status='in_review' WHERE id=? AND status IN"
                      " ('approved','rejected')", (clip_id,))
-        return back("/review", "Moved back to review")
-
-    # ---------- posts & views ----------
-    @app.get("/posts")
-    def posts(request: Request, conn: DB, msg: str = ""):
-        rows = conn.execute(
-            """SELECT p.*, c.hook_text, cp.name campaign, cp.min_views,
-                      (SELECT MAX(views) FROM view_snapshots v WHERE v.post_id=p.id) views,
-                      (SELECT MAX(taken_at) FROM view_snapshots v WHERE v.post_id=p.id) checked
-               FROM posts p JOIN clips k ON k.id=p.clip_id JOIN candidates c ON c.id=k.candidate_id
-               JOIN sources s ON s.id=c.source_id JOIN campaigns cp ON cp.id=s.campaign_id
-               ORDER BY p.posted_at DESC LIMIT 200""").fetchall()
-        return page(request, "posts.html", posts=rows, msg=msg)
+        return back(_next(next, "/review"), "Moved back to review")
 
     @app.post("/posts/{post_id}/views")
-    def add_views(post_id: int, conn: DB, views: int = Form(...), likes: str = Form("")):
+    def add_views(post_id: int, conn: DB, views: int = Form(...), likes: str = Form(""),
+                  next: str = Form("")):
         conn.execute("INSERT INTO view_snapshots (post_id, views, likes) VALUES (?,?,?)",
                      (post_id, views, int(likes) if likes.strip().isdigit() else None))
-        return back("/posts", "Views saved")
+        return back(_next(next, "/posts"), "Views saved")
 
     # ---------- campaigns → bounties (each bounty: footage, requirements, settings) ----------
     def _camp_or_404(conn, cid: int) -> dict:
@@ -230,10 +311,6 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         camps = list_campaigns(conn)
         for c in camps:
             c["bounties"] = list_bounties(conn, c["id"])
-            c["to_review"] = conn.execute(
-                "SELECT COUNT(*) FROM clips k JOIN candidates ca ON ca.id=k.candidate_id JOIN"
-                " sources s ON s.id=ca.source_id WHERE s.campaign_id=? AND k.status='in_review'",
-                (c["id"],)).fetchone()[0]
         return page(request, "campaigns.html", campaigns=camps, msg=msg, prefill=prefill)
 
     @app.post("/campaigns")
@@ -338,7 +415,8 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         return page(request, "bounty.html", c=c, b=b, docs=docs, brief=briefs.merged(conn, bid),
                     sources=sources, files=files, new_files=[f for f in files if not f["queued"]],
                     folders=library.folders(conn), hosts=[s.host_name, *remote_hosts(conn)],
-                    busy=busy, library_dir=s.media_library_dir.name, msg=msg)
+                    busy=busy, library_dir=s.media_library_dir.name, msg=msg,
+                    tabs=clip_counts(conn, bid))
 
     @app.post("/campaigns/{cid}/bounties/{bid}/settings")
     def bounty_settings(cid: int, bid: int, conn: DB, rate_usd: float = Form(0),

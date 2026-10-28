@@ -53,12 +53,28 @@ def get_bounty(conn: sqlite3.Connection, bounty_id: int) -> dict | None:
     return _with_rate(r) if r else None
 
 
+def _count(status: str) -> str:
+    return (f"(SELECT COUNT(*) FROM clips k JOIN candidates ca ON ca.id=k.candidate_id"
+            f" JOIN sources s ON s.id=ca.source_id WHERE s.bounty_id=b.id"
+            f" AND k.status='{status}') {status}")
+
+
+# Per-bounty clip counts by stage, for the tabs and the campaign list.
+CLIP_COUNTS = ", ".join(_count(st) for st in ("in_review", "approved", "posted"))
+
+
+def clip_counts(conn: sqlite3.Connection, bounty_id: int) -> dict:
+    return dict(conn.execute(f"SELECT {CLIP_COUNTS} FROM bounties b WHERE b.id=?",
+                             (bounty_id,)).fetchone())
+
+
 def list_bounties(conn: sqlite3.Connection, campaign_id: int) -> list[dict]:
     rows = conn.execute(
-        """SELECT b.*, c.name campaign,
+        f"""SELECT b.*, c.name campaign,
                   (SELECT COUNT(*) FROM sources s WHERE s.bounty_id=b.id) sources,
                   (SELECT COUNT(*) FROM clips k JOIN candidates ca ON ca.id=k.candidate_id
-                   JOIN sources s ON s.id=ca.source_id WHERE s.bounty_id=b.id) clips
+                   JOIN sources s ON s.id=ca.source_id WHERE s.bounty_id=b.id) clips,
+                  {CLIP_COUNTS}
            FROM bounties b JOIN campaigns c ON c.id=b.campaign_id WHERE b.campaign_id=?
            ORDER BY b.status='ended', b.id""", (campaign_id,)).fetchall()
     return [_with_rate(r) for r in rows]

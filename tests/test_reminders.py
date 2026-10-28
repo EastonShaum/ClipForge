@@ -62,5 +62,5 @@ def test_digest_warns_about_ending_campaign_and_nags_until_submitted(client, con
     assert "not submitted" in sent[0] and "video/1" in sent[0]
 
     client.post("/posts/1/submitted")
-    assert "submitted ✓" in client.get("/approved").text
+    assert "submitted ✓" in client.get("/posts").text
     assert reminders.unsubmitted(conn, DIGEST_TIME) == []

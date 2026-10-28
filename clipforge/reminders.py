@@ -34,6 +34,7 @@ def next_to_post(conn: sqlite3.Connection) -> list[dict]:
     then the highest score."""
     rows = conn.execute(
         f"""SELECT k.id, k.status, c.hook_text, c.score, {LABEL} campaign, b.end_date,
+                   cp.id cid, b.id bid,
                    cp.allowed_platforms, GROUP_CONCAT(p.platform) done
             FROM clips k JOIN candidates c ON c.id=k.candidate_id
             JOIN sources s ON s.id=c.source_id JOIN campaigns cp ON cp.id=s.campaign_id
@@ -54,7 +55,7 @@ def next_to_post(conn: sqlite3.Connection) -> list[dict]:
 def unsubmitted(conn: sqlite3.Connection, now_utc: datetime) -> list[sqlite3.Row]:
     cutoff = (now_utc - SUBMIT_AFTER).strftime("%Y-%m-%dT%H:%M:%SZ")
     return conn.execute(
-        f"""SELECT p.id, p.platform, p.url, c.hook_text, {LABEL} campaign
+        f"""SELECT p.id, p.platform, p.url, c.hook_text, {LABEL} campaign, cp.id cid, b.id bid
             FROM posts p JOIN clips k ON k.id=p.clip_id JOIN candidates c ON c.id=k.candidate_id
             JOIN sources s ON s.id=c.source_id JOIN campaigns cp ON cp.id=s.campaign_id
             LEFT JOIN bounties b ON b.id=s.bounty_id
@@ -75,8 +76,10 @@ def _submit_lines(rows, base: str) -> list[str]:
     if not rows:
         return []
     lines = [f"📝 **{len(rows)} post link(s) not submitted to the campaign yet** "
-             f"(mark them done at {base}/approved):"]
-    lines += [f"• {r['campaign']} · {r['platform']}: {r['url']}" for r in rows[:8]]
+             "(mark them done on each bounty's Posted tab):"]
+    lines += [f"• {r['campaign']} · {r['platform']}: {r['url']} → "
+              f"{base}/campaigns/{r['cid']}/bounties/{r['bid']}/posted#post{r['id']}"
+              for r in rows[:8]]
     return lines
 
 
@@ -86,7 +89,8 @@ def slot_message(conn: sqlite3.Connection, s: Settings, now_utc: datetime) -> st
     if queue:
         c = queue[0]
         lines = [f"⏰ **Time to post:** \"{c['hook_text']}\" ({c['campaign']}) → "
-                 f"{', '.join(c['todo'])}", f"{base}/approved#clip{c['id']}"]
+                 f"{', '.join(c['todo'])}",
+                 f"{base}/campaigns/{c['cid']}/bounties/{c['bid']}/post#clip{c['id']}"]
         if len(queue) > 1:
             lines.append(f"{len(queue) - 1} more clip(s) waiting after this one.")
     else:

@@ -13,10 +13,7 @@ catch (e) { document.documentElement.dataset.theme = 'dark'; }
 </head>
 <body>
 <nav>
-  <a href="/review" class="{{ 'on' if active == 'review' }}">Review</a>
-  <a href="/approved" class="{{ 'on' if active == 'approved' }}">Post</a>
-  <a href="/posts" class="{{ 'on' if active == 'posts' }}">Views</a>
-  <a href="/campaigns" class="{{ 'on' if active in ('campaigns', 'campaign', 'queue') }}">Campaigns</a>
+  <a href="/campaigns" class="{{ 'on' if active in ('campaigns', 'campaign', 'bounty', 'queue', 'review', 'post', 'posted') }}">Campaigns</a>
   <a href="/scout" class="{{ 'on' if active == 'scout' }}">Scout</a>
   <a href="/dashboard" class="{{ 'on' if active == 'dashboard' }}">Dashboard</a>
   <button type="button" class="theme" onclick="toggleTheme()" aria-label="Switch light or dark theme">◐</button>

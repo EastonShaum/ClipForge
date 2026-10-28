@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Post · {{ b.name }} · ClipForge{% endblock %}
+{% block content %}
+{% include "_bounty_head.html" %}
+{% for c in clips %}
+<article class="card" id="clip{{ c.id }}">
+  <div class="row"><span class="chip">post to: {{ c.todo|join(', ') }}</span>
+    {% for p in c.posts %}<span class="chip">✓ {{ p.platform }}</span>{% endfor %}</div>
+  <div class="hook">{{ c.hook_text }}</div>
+  <video src="/media/clips/{{ c.path }}" controls playsinline preload="metadata"></video>
+  <div class="row">
+    <a class="btn go big" href="/media/clips/{{ c.path }}" download="clip{{ c.id }}.mp4">Save video</a>
+    <button type="button" class="big" onclick="copyText('cap{{ c.id }}', this)">Copy caption</button>
+  </div>
+  <form method="post" action="/clips/{{ c.id }}/caption" class="grid2" style="grid-template-columns:1fr">
+    <input type="hidden" name="next" value="{{ here }}">
+    <textarea id="cap{{ c.id }}" name="caption">{{ c.caption }}</textarea>
+    <button class="small">Save caption edits</button>
+  </form>
+  <details class="small">
+    <summary>Disclosure checklist</summary>
+    <ul>{% for p, r in reminders.items() %}<li><b>{{ p }}</b>: {{ r }}</li>{% endfor %}</ul>
+  </details>
+  <form method="post" action="/clips/{{ c.id }}/post" class="grid2">
+    <input type="hidden" name="next" value="{{ here }}">
+    <label>Platform
+      <select name="platform">{% for p in platforms %}<option {{ 'selected' if c.todo and p == c.todo[0] }}>{{ p }}</option>{% endfor %}</select>
+    </label>
+    <label>Post URL <input name="url" type="url" placeholder="https://www.tiktok.com/@…/video/…" required></label>
+    <button class="go">Log post</button>
+  </form>
+  {% if not c.posts %}
+  <form method="post" action="/clips/{{ c.id }}/unreview"><input type="hidden" name="next" value="{{ here }}"><button class="small">Undo approval</button></form>
+  {% endif %}
+</article>
+{% else %}
+<div class="card empty">Nothing left to post for this bounty.
+  {% if tabs.in_review %}<a href="/campaigns/{{ c.id }}/bounties/{{ b.id }}/review">{{ tabs.in_review }} clip(s) waiting for review.</a>{% endif %}</div>
+{% endfor %}
+{% endblock %}

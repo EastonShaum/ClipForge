@@ -281,7 +281,8 @@ def _maybe_finish_source(conn: sqlite3.Connection, s: Settings, sid: int) -> Non
         " WHERE c.source_id=? AND k.status='in_review'", (sid,)).fetchone()["n"]
     src = _source(conn, sid)
     notify.discord(f"🎬 **{n} new clips ready** from *{src['title'] or src['url']}* "
-                   f"({src['campaign_name']})\n{s.public_base_url}/review")
+                   f"({src['campaign_name']})\n{s.public_base_url}/campaigns/"
+                   f"{src['campaign_id']}/bounties/{src['bounty_id']}/review")
 
 
 def _maybe_finish_scout(conn: sqlite3.Connection, s: Settings) -> None:

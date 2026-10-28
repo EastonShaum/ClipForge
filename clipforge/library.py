@@ -184,7 +184,8 @@ def newly_ready(conn: sqlite3.Connection, host: str) -> str | None:
         if b["auto_queue"]:
             for f in fs:
                 add_source(conn, b["campaign_id"], f["path"], f["host"], bounty_id=b["id"])
-            lines.append(f"Auto-queued for clipping. Clips will show up in {base}/review")
+            lines.append(f"Auto-queued for clipping. Clips will show up in {base}/campaigns/"
+                         f"{b['campaign_id']}/bounties/{b['id']}/review")
         else:
             lines.append(f"Queue it for clipping: {base}/campaigns/{b['campaign_id']}"
                          f"/bounties/{b['id']}/queue")

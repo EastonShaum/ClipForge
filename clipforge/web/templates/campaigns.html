@@ -6,12 +6,19 @@
 <article class="card">
   <a class="camp-link row" href="/campaigns/{{ c.id }}"><b>{{ c.name }}</b><span class="chip">{{ c.status }}</span>
     {% if c.category %}<span class="chip">{{ c.category }}</span>{% endif %}
-    {% if c.to_review %}<span class="chip">{{ c.to_review }} to review</span>{% endif %}</a>
+</a>
   {% for b in c.bounties %}
   <a class="camp-link bounty-row small" href="/campaigns/{{ c.id }}/bounties/{{ b.id }}">
     <span>↳ {{ b.name }}</span>
     <span class="muted">${{ "%.0f"|format(b.rate_usd) }}/{{ (b.rate_per_views // 1000)|num }}K · {{ b.sources }} videos · {{ b.clips }} clips{% if b.status != 'active' %} · {{ b.status }}{% endif %}{% if b.end_date %} · ends {{ b.end_date }}{% endif %}</span>
   </a>
+  {% if b.in_review or b.approved or b.posted %}
+  <div class="row small stage-links">
+    {% if b.in_review %}<a class="chip" href="/campaigns/{{ c.id }}/bounties/{{ b.id }}/review">{{ b.in_review }} to review</a>{% endif %}
+    {% if b.approved %}<a class="chip" href="/campaigns/{{ c.id }}/bounties/{{ b.id }}/post">{{ b.approved }} to post</a>{% endif %}
+    {% if b.posted %}<a class="chip" href="/campaigns/{{ c.id }}/bounties/{{ b.id }}/posted">{{ b.posted }} posted</a>{% endif %}
+  </div>
+  {% endif %}
   {% endfor %}
 </article>
 {% endfor %}

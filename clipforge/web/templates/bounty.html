@@ -2,8 +2,7 @@
 {% block title %}{{ b.name }} · {{ c.name }} · ClipForge{% endblock %}
 {% block content %}
 {% if busy %}<meta http-equiv="refresh" content="20">{% endif %}
-<div class="small"><a href="/campaigns">Campaigns</a> › <a href="/campaigns/{{ c.id }}">{{ c.name }}</a></div>
-<h1>{{ b.name }}</h1>
+{% include "_bounty_head.html" %}
 <div class="row small">
   <span class="chip">{{ b.status }}</span>
   <span class="score">${{ "%.0f"|format(b.rate_usd) }} per {{ b.rate_per_views|num }} views</span>
