@@ -29,12 +29,17 @@ function toggleTheme() {
   try { localStorage.setItem('theme', t); } catch (e) {}
 }
 // Copy that also works over plain http (navigator.clipboard needs https).
-function copyText(id, btn) {
-  const el = document.getElementById(id);
+function copyText(id, btn) { copyValue(document.getElementById(id).value, btn); }
+function copyValue(text, btn) {
   const done = () => { const t = btn.textContent; btn.textContent = "Copied ✓"; setTimeout(() => btn.textContent = t, 1500); };
-  if (navigator.clipboard && window.isSecureContext) {
-    navigator.clipboard.writeText(el.value).then(done, () => { el.select(); document.execCommand("copy"); done(); });
-  } else { el.focus(); el.select(); document.execCommand("copy"); done(); }
+  const fallback = () => {
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.style.cssText = "position:fixed;top:0;left:-9999px;font-size:16px";
+    document.body.appendChild(ta); ta.focus(); ta.setSelectionRange(0, text.length);
+    document.execCommand("copy"); ta.remove(); done();
+  };
+  if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(done, fallback);
+  else fallback();
 }
 </script>
 </body>

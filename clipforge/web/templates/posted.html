@@ -4,9 +4,23 @@
 {% include "_bounty_head.html" %}
 <p class="small muted">Each post: fix its link, mark it submitted on the campaign site, and log views as they grow (each entry is a snapshot).
   {% if b.min_views %}Pays from {{ b.min_views|num }} views.{% endif %}</p>
+{% set all_posts = clips|map(attribute='posts')|sum(start=[]) %}
+{% set unsent = all_posts|rejectattr('submitted_at')|list %}
+{% if all_posts %}
+<div class="row">
+  <button type="button" class="go" data-links="{{ all_posts|map(attribute='url')|join('\n') }}"
+          onclick="copyValue(this.dataset.links, this)">Copy all {{ all_posts|length }} links</button>
+  {% if unsent and unsent|length < all_posts|length %}
+  <button type="button" data-links="{{ unsent|map(attribute='url')|join('\n') }}"
+          onclick="copyValue(this.dataset.links, this)">Copy {{ unsent|length }} not submitted</button>{% endif %}
+  <span class="small muted">One link per line, ready to paste into Clipping.net.</span>
+</div>
+{% endif %}
 {% for c in clips %}
 <article class="card" id="clip{{ c.id }}">
   <div class="row"><span class="hook" style="flex:1">{{ c.hook_text }}</span>
+    {% if c.posts %}<button type="button" class="small" data-links="{{ c.posts|map(attribute='url')|join('\n') }}"
+            onclick="copyValue(this.dataset.links, this)">Copy {{ c.posts|length }} link{{ 's' if c.posts|length > 1 }}</button>{% endif %}
     <a class="small" href="/media/clips/{{ c.path }}" target="_blank" rel="noopener">watch</a></div>
   {% for p in c.posts %}
   <div class="post" id="post{{ p.id }}">

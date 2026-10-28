@@ -64,3 +64,21 @@ def test_edit_remove_and_add_post_links(client, conn):
     assert conn.execute("SELECT COUNT(*) FROM posts").fetchone()[0] == 0
     assert conn.execute("SELECT COUNT(*) FROM view_snapshots").fetchone()[0] == 0
     assert conn.execute("SELECT status FROM clips").fetchone()[0] == "approved"  # back to Post
+
+
+def test_copy_post_links_one_per_line(client, conn):
+    client.post("/campaigns", data={"name": "N3on", "bounty_name": "lizzo", "rate_usd": "150",
+                                    "rate_mode": "100000", "allowed_platforms": "tiktok,youtube"})
+    here = "/campaigns/1/bounties/1/posted"
+    a, b = _clip(conn, 1, 1, "A", "approved"), _clip(conn, 1, 1, "B", "approved")
+    for k, url in [(a, "https://www.tiktok.com/@x/video/1"), (a, "https://youtube.com/shorts/a"),
+                   (b, "https://www.tiktok.com/@x/video/2")]:
+        client.post(f"/clips/{k}/post", data={"platform": "youtube" if "you" in url else "tiktok",
+                                              "url": url, "next": here})
+    page = client.get(here).text
+    assert "Copy all 3 links" in page and "Copy 2 links" in page and "Copy 1 link<" in page
+    assert ('data-links="https://www.tiktok.com/@x/video/1\nhttps://youtube.com/shorts/a\n'
+            'https://www.tiktok.com/@x/video/2"') in page
+    assert "not submitted" not in page  # all unsubmitted: one button is enough
+    client.post("/posts/1/submitted", data={"next": here})
+    assert "Copy 2 not submitted" in client.get(here).text
