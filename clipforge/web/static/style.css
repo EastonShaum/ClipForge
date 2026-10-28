@@ -73,8 +73,8 @@ button:disabled { opacity: .5; cursor: default }
 .bounty-row:hover { outline: 1px solid var(--accent) }
 
 /* bounty tabs: Review · Post · Posted & views · Footage & settings */
-.tabs { display: flex; gap: 4px; overflow-x: auto; margin: 4px 0 12px; border-bottom: 1px solid var(--line) }
-.tabs a { padding: 10px 12px; text-decoration: none; color: var(--muted); font-weight: 600; white-space: nowrap }
+.tabs { display: flex; gap: 0; overflow-x: auto; margin: 4px 0 12px; border-bottom: 1px solid var(--line) }
+.tabs a { padding: 10px 7px; text-decoration: none; color: var(--muted); font-weight: 600; white-space: nowrap }
 .tabs a.on { color: var(--fg); box-shadow: inset 0 -3px var(--accent) }
 .tabs .count { background: var(--accent); color: var(--accent-fg); border-radius: 999px; padding: 0 7px; font-size: .8em }
 .stage-links { padding: 4px 12px 0 24px }
