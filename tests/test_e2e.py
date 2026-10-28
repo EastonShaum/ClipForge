@@ -1,6 +1,7 @@
 """End to end: campaign → source (local fixture) → fetch → transcribe → select → render →
 review → approve → log post → views → dashboard. Offline: fake transcriber and selector."""
 
+import json
 from pathlib import Path
 
 from clipforge.worker import WORKER_PROTOCOL, run_local
@@ -103,3 +104,15 @@ def test_worker_api_requires_token_and_round_trips(client, conn):
     assert src["media_host"] == "laptop" and src["title"] == "Remote title"
     t = conn.execute("SELECT * FROM jobs WHERE kind='transcribe'").fetchone()
     assert t["affinity_host"] == "laptop"  # media lives on the laptop now
+
+    # A long stream's transcript is several MB, over Starlette's 1 MB form-field default.
+    job = client.post("/api/worker/claim", headers=h,
+                      json={"worker": "laptop-remote-1", "host": "laptop",
+                            "kinds": ["transcribe"], "protocol": WORKER_PROTOCOL}).json()["job"]
+    words = [{"w": "word", "s": i * 0.3, "e": i * 0.3 + 0.2} for i in range(60_000)]
+    result = json.dumps({"words": words, "provider": "groq", "model": "whisper",
+                         "language": "en", "audio_s": 6189, "usd": 0})
+    assert len(result) > 2_000_000
+    r = client.post(f"/api/worker/jobs/{job['id']}/result", headers=h, data={"result": result})
+    assert r.status_code == 200
+    assert conn.execute("SELECT status FROM sources").fetchone()[0] == "transcribed"

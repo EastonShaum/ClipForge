@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
+from starlette.datastructures import UploadFile as StarletteUpload
 
 from clipforge import analytics, briefs, costs, jobqueue, library, notify, pipeline, scout
 from clipforge.bounties import BountyIn, add_bounty, get_bounty, list_bounties
@@ -51,6 +52,7 @@ templates.env.filters["mmss"] = lambda ms: f"{(ms or 0) // 60000}:{(ms or 0) // 
 
 PLATFORMS = ["tiktok", "youtube", "instagram", "x"]
 MAX_SHOT_BYTES = 15_000_000
+MAX_RESULT_BYTES = 200_000_000  # a stage result (JSON); ~10 h of word timings is ~10 MB
 
 
 def create_app() -> FastAPI:
@@ -587,13 +589,17 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         return job
 
     @app.post("/api/worker/jobs/{job_id}/result", dependencies=[Worker])
-    def api_result(job_id: int, conn: DB, result: str = Form(...),
-                   file: UploadFile | None = File(None)):
+    async def api_result(job_id: int, request: Request, conn: DB):
+        # Starlette caps form fields at 1 MB; a long stream's word-level transcript is bigger.
+        form = await request.form(max_part_size=MAX_RESULT_BYTES)
+        if "result" not in form:
+            raise HTTPException(400, "missing result")
+        file = form.get("file")
         job = _job(conn, job_id)
-        data = json.loads(result)
+        data = json.loads(form["result"])
         host = job["locked_by"].rsplit("-", 2)[0]
         if job["kind"] == "render":
-            if not file:
+            if not isinstance(file, StarletteUpload):
                 raise HTTPException(400, "render result needs the clip file")
             cand = conn.execute("SELECT source_id FROM candidates WHERE id=?",
                                 (job["candidate_id"],)).fetchone()
