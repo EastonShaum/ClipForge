@@ -144,6 +144,38 @@ def relink_moved(conn: sqlite3.Connection, host: str) -> int:
     return moved
 
 
+def newly_ready(conn: sqlite3.Connection, host: str) -> str | None:
+    """A Discord message for videos that just finished landing in an active bounty's folder
+    (e.g. an overnight VOD download), or None. Each file is announced once (settings_kv)."""
+    from clipforge.bounties import label
+
+    bounties = conn.execute(
+        "SELECT b.id, b.campaign_id, b.name, b.media_folder, c.name campaign FROM bounties b"
+        " JOIN campaigns c ON c.id=b.campaign_id WHERE b.status='active' AND c.status='active'"
+        " AND b.media_folder IS NOT NULL ORDER BY length(b.media_folder) DESC").fetchall()
+    ready: dict[int, list[dict]] = {}
+    for b in bounties:
+        for f in files_for(conn, b):
+            if f["host"] != host or f["queued"] or f["settling"]:
+                continue
+            key = f"footage-ready:{host}:{f['rel']}:{f['size']}"
+            if conn.execute("INSERT INTO settings_kv (key, value) VALUES (?, ?) ON CONFLICT(key)"
+                            " DO NOTHING", (key, str(b["id"]))).rowcount:
+                ready.setdefault(b["id"], []).append({**f, "bounty": b})
+    if not ready:
+        return None
+    base = get_settings().public_base_url
+    lines = []
+    for fs in ready.values():
+        b = fs[0]["bounty"]
+        hours = sum(f["duration_s"] or 0 for f in fs) / 3600
+        lines.append(f"🎬 **New footage ready: {label(b['campaign'], b['name'])}**: "
+                     f"{', '.join(f['rel'].rsplit('/', 1)[-1] for f in fs)} ({hours:.1f} h)")
+        lines.append(f"Queue it for clipping: {base}/campaigns/{b['campaign_id']}"
+                     f"/bounties/{b['id']}/queue")
+    return "\n".join(lines)
+
+
 def estimate(files: list[dict]) -> dict:
     """What queuing these files costs: API dollars, clips to review, laptop render time."""
     s = get_settings()

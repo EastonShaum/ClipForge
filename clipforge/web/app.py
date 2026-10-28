@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from clipforge import analytics, briefs, costs, jobqueue, library, pipeline, scout
+from clipforge import analytics, briefs, costs, jobqueue, library, notify, pipeline, scout
 from clipforge.bounties import BountyIn, add_bounty, get_bounty, list_bounties
 from clipforge.campaigns import (
     CampaignIn,
@@ -638,6 +638,9 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         with tx(conn):
             n = library.store(conn, body.host, body.files)
             library.relink_moved(conn, body.host)
+            msg = library.newly_ready(conn, body.host)
+        if msg:
+            notify.discord(msg)
         return {"ok": True, "files": n}
 
     class DeferIn(BaseModel):

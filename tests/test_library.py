@@ -120,3 +120,19 @@ def test_delete_one_bounty_keeps_the_campaign(client, conn):
     assert "Deleted bounty episode-5: 1 videos" in r.text
     assert [r[0] for r in conn.execute("SELECT name FROM bounties")] == ["episode-4"]
     assert conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0] == 0
+
+
+def test_finished_download_pings_discord_once(client, conn, monkeypatch):
+    from clipforge import notify
+    sent = []
+    monkeypatch.setattr(notify, "discord", sent.append)
+    client.post("/campaigns", data={"name": "N3on", "bounty_name": "lizzo", "rate_usd": "150",
+                                    "rate_mode": "100000"})
+    _report(client, [_file("N3on/lizzo/vod.mp4", age=5), _file("Elsewhere/x.mp4")])
+    assert sent == []  # still downloading; outside any bounty folder
+    _report(client, [_file("N3on/lizzo/vod.mp4", mins=150), _file("Elsewhere/x.mp4")])
+    assert len(sent) == 1
+    assert "N3on · lizzo" in sent[0] and "vod.mp4 (2.5 h)" in sent[0]
+    assert "/campaigns/1/bounties/1/queue" in sent[0]
+    _report(client, [_file("N3on/lizzo/vod.mp4", mins=150)])
+    assert len(sent) == 1  # announced once
