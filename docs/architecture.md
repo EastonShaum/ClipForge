@@ -52,6 +52,9 @@
 | `clipforge/web/` | FastAPI app, Jinja templates, CSS |
 | `clipforge/feedback.py`, `select_prompts.py`, `prompts/` | Feedback loop, prompt versioning, prompt text |
 | `clipforge/analytics.py`, `costs.py`, `campaigns.py`, `captions.py`, `ingest.py`, `notify.py`, `scheduler.py` | As named |
+| `clipforge/live.py` | Pi side of live streams: who's live, sessions, chunks → sources, recorder plan (D30) |
+| `clipforge/recorder.py` | Laptop side: records streams as `.ts` pieces, writes overlapping `.ffconcat` chunks |
+| `clipforge/bounties.py` | Bounties, plus render holds (`hold_reasons`, `release`) |
 
 ## Job and entity states
 ```

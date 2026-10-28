@@ -12,12 +12,13 @@ import signal
 import socket
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
 import httpx
 
-from clipforge import jobqueue, library, pipeline, tools
+from clipforge import jobqueue, library, pipeline, recorder, tools
 from clipforge.config import get_settings
 from clipforge.db import session
 from clipforge.update import UPDATE_EXIT_CODE, local_version
@@ -117,6 +118,14 @@ class RemoteClient:
         r.raise_for_status()
         return r.json()["folders"]
 
+    def live(self, host: str) -> dict:
+        r = self.http.get("/api/worker/live", params={"host": host})
+        r.raise_for_status()
+        return r.json()
+
+    def live_report(self, session_id: int, report: dict) -> None:
+        self.http.post(f"/api/worker/live/{session_id}", json=report).raise_for_status()
+
     def defer(self, job_id: int, seconds: float, reason: str) -> None:
         self.http.post(f"/api/worker/jobs/{job_id}/defer",
                        json={"seconds": seconds, "reason": reason}).raise_for_status()
@@ -139,6 +148,12 @@ def run_remote(base_url: str, kinds: list[str], idle_s: float = 10.0):
     client = RemoteClient(base_url, s.worker_token)
     log.info("remote worker %s -> %s for %s", name, base_url, kinds)
     log.info("media library: %s", s.media_library_dir)
+    # Live streams record in their own thread (and HTTP client), so a long job can't stall them.
+    rec_stop = threading.Event()
+    threading.Thread(target=recorder.run, daemon=True, name="recorder",
+                     args=(RemoteClient(base_url, s.worker_token), host, s.live_dir,
+                           rec_stop)).start()
+    log.info("live recordings: %s", s.live_dir)
     last_scan, last_report = 0.0, None
     while not _stop:
         if time.monotonic() - last_scan >= LIBRARY_SCAN_S:

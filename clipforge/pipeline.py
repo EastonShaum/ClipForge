@@ -200,11 +200,16 @@ def apply_result(conn: sqlite3.Connection, s: Settings, job: sqlite3.Row, result
             meta = result["meta"]
             pv_id = result.get("prompt_version_id")
             src = conn.execute(
-                "SELECT s.media_host, COALESCE(s.clips_wanted, b.clips_wanted, ?) keep"
+                "SELECT s.media_host, s.skip_ms, COALESCE(b.render_hold, 0) hold,"
+                " COALESCE(s.clips_wanted, b.clips_wanted, ?) keep"
                 " FROM sources s LEFT JOIN bounties b ON b.id=s.bounty_id WHERE s.id=?",
                 (s.candidates_keep, sid)).fetchone()
+            n_kept = 0
             for rank, c in enumerate(result["candidates"], start=1):
-                kept = rank <= src["keep"]
+                # A live chunk starts with the end of the previous one (D30); a moment wholly
+                # inside that overlap was already offered there.
+                kept = n_kept < src["keep"] and c["end_ms"] > src["skip_ms"]
+                n_kept += kept
                 cur = conn.execute(
                     """INSERT INTO candidates (source_id, start_ms, end_ms, hook_text, hook_type,
                            title, rationale, score, rank, kept, prompt_version_id)
@@ -213,7 +218,8 @@ def apply_result(conn: sqlite3.Connection, s: Settings, job: sqlite3.Row, result
                     (sid, c["start_ms"], c["end_ms"], c["hook_text"], c["hook_type"],
                      c.get("title", ""), c.get("rationale", ""), c["score"], rank, int(kept), pv_id),
                 )
-                if kept and cur.rowcount:
+                # A held bounty renders once its requirements are in (bounties.release).
+                if kept and cur.rowcount and not src["hold"]:
                     jobqueue.enqueue(conn, "render", f"render:{cur.lastrowid}", source_id=sid,
                                      candidate_id=cur.lastrowid, affinity_host=src["media_host"],
                                      priority=80)

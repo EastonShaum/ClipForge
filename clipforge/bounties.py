@@ -1,11 +1,14 @@
 """Bounties: the paid units inside a campaign (Man On → episode-4, episode-5…). Each has its own
 rate, budget threshold, end date, requirements and footage folder; sources belong to one."""
 
+import re
 import sqlite3
 
 from pydantic import BaseModel, Field
 
-from clipforge.campaigns import effective_per_1k, folder_name
+from clipforge import jobqueue
+from clipforge.briefs import merged
+from clipforge.campaigns import effective_per_1k, folder_name, logo_list
 
 
 class BountyIn(BaseModel):
@@ -19,6 +22,8 @@ class BountyIn(BaseModel):
     required_tags: str = ""
     notes: str = ""
     source_links: str = ""
+    live_clip: bool = False  # clip the streamer's live streams into this bounty (D30)
+    render_hold: bool = False  # pick clips, but render only once the requirements are in
 
 
 def bounty_folder(campaign: sqlite3.Row | dict, bounty_name: str) -> str:
@@ -97,3 +102,62 @@ def _with_rate(r: sqlite3.Row) -> dict:
     d = dict(r)
     d["per_1k"] = effective_per_1k(d["rate_usd"], d["rate_per_views"])
     return d
+
+
+# A brief that bans logos or makes them optional doesn't need one; anything else that talks
+# about logos does. Unclear cases wait, and "Render now" overrides.
+_NO_LOGO = re.compile(r"\b(no|without|banned|prohibited|not allowed|optional|not required|"
+                      r"not needed|don'?t (add|use|include|put))\b", re.I)
+
+
+def hold_reasons(conn: sqlite3.Connection, b: sqlite3.Row | dict) -> list[str]:
+    """What a held bounty still needs before its clips render. Empty = nothing (or not held)."""
+    if not b["render_hold"]:
+        return []
+    docs = conn.execute("SELECT d.applied_at, j.state FROM campaign_docs d LEFT JOIN jobs j ON"
+                        " j.dedupe_key='brief:'||d.id WHERE d.bounty_id=?", (b["id"],)).fetchall()
+    out = []
+    if not docs:
+        out.append("requirement screenshots")
+    elif any(d["state"] in ("queued", "running") for d in docs):
+        out.append("requirements (still being read)")
+    elif not any(d["applied_at"] for d in docs):
+        out.append("“Apply to bounty” on the requirements")
+    rule = " ".join(merged(conn, b["id"])["logo_rule"])
+    logos = conn.execute("SELECT logo_path FROM campaigns WHERE id=?",
+                         (b["campaign_id"],)).fetchone()["logo_path"]
+    if re.search(r"\blogos?\b", rule, re.I) and not _NO_LOGO.search(rule) \
+            and not logo_list(logos):
+        out.append("campaign logo")
+    return out
+
+
+# Kept candidates of a bounty that have no clip yet.
+_UNRENDERED = """SELECT c.id, c.source_id, s.media_host FROM candidates c
+                 JOIN sources s ON s.id=c.source_id
+                 WHERE s.bounty_id=? AND c.kept=1
+                   AND NOT EXISTS (SELECT 1 FROM clips k WHERE k.candidate_id=c.id)"""
+
+
+def held_count(conn: sqlite3.Connection, bounty_id: int) -> int:
+    return conn.execute(f"SELECT COUNT(*) FROM ({_UNRENDERED}) u WHERE NOT EXISTS (SELECT 1"
+                        " FROM jobs j WHERE j.dedupe_key='render:'||u.id)",
+                        (bounty_id,)).fetchone()[0]
+
+
+def release(conn: sqlite3.Connection, bounty_id: int) -> int:
+    """Stop holding and queue every picked clip that hasn't rendered. Returns renders queued."""
+    conn.execute("UPDATE bounties SET render_hold=0 WHERE id=?", (bounty_id,))
+    n = 0
+    for c in conn.execute(_UNRENDERED, (bounty_id,)).fetchall():
+        n += jobqueue.enqueue(conn, "render", f"render:{c['id']}", source_id=c["source_id"],
+                              candidate_id=c["id"], affinity_host=c["media_host"],
+                              priority=80) is not None
+    return n
+
+
+def release_ready(conn: sqlite3.Connection, campaign_id: int | None = None) -> int:
+    """Release every held bounty that now has everything it needs."""
+    rows = conn.execute("SELECT * FROM bounties WHERE render_hold=1 AND (? IS NULL OR"
+                        " campaign_id=?)", (campaign_id, campaign_id)).fetchall()
+    return sum(release(conn, b["id"]) for b in rows if not hold_reasons(conn, b))

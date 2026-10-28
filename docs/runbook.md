@@ -70,6 +70,12 @@ Restore: stop the services, `cp data/backups/<file>.db data/clipforge.db`, delet
 
 Worker token: generate with `openssl rand -hex 24`. It must match on the Pi and the laptop.
 
+## Live streams (D30)
+- **Watch a streamer:** campaign page → **Live streams** → add their channel (`kick.com/n3on`, `twitch.tv/n3on`) and tick **Watch**. With no channel, ClipForge tries the campaign's name on both sites. You get a 🔴 Discord ping when they go live, and the laptop records to `Live\<campaign>\…`.
+- **Clip a live bounty:** Scout → **Add & clip live** (or tick **Clip live streams** in the bounty's settings). While they're live, a 30-minute chunk goes through clipping every 30 min.
+- **Renders wait for the rules:** upload the bounty's requirement screenshots, press **Apply to bounty**, and add a logo if the brief asks for one. Rendering then starts by itself. **Render now** skips the wait. Discord reminds you every 3 h while clips wait.
+- **The laptop worker must be running** to record. Recordings are deleted 3 days after the stream ends, once their clips are done.
+
 ## Laptop worker (Windows 10)
 1. Copy the repo to the laptop: `git clone pi@raspberrypi:CLipping` over Tailscale SSH, or a zip.
 2. In PowerShell, from the repo: `powershell -ExecutionPolicy Bypass -File scripts\laptop\setup.ps1`. It installs uv and ffmpeg and creates `.env`.

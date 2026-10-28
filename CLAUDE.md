@@ -39,8 +39,8 @@ systemctl --user status 'clipforge-*'
 - **Prompts** live in `clipforge/prompts/select-*.md`. Editing one creates a new version (content hash). Template vars: `{category} {title} {n} {min_s} {max_s} {rubric} {feedback} {hook_types} {transcript}`.
 - **Commits:** conventional (`feat:`, `fix:`, `docs:`, `chore:`), small.
 
-## Current status (2026-10-27)
-- Phases 0–7 are built, plus: in-place local footage pinned to the right machine (D20), laptop self-update (D21), Discord posting reminders (D22), several campaign logos as a row under the captions (D23, worker protocol 3), Scout, which ranks bounties from uploaded screenshots (D24), requirement screenshots read per campaign (D25), and one page per campaign with footage picked from the laptop's folders after a confirm step (D26), and campaigns that hold bounties, with folders `Campaigns/<campaign>/<bounty>` (D27), footage-ready pings, auto-queue and clips per video (D28), and review/post/views as tabs inside each bounty (D29). 79 tests pass.
+## Current status (2026-10-28)
+- Phases 0–7 are built, plus: in-place local footage pinned to the right machine (D20), laptop self-update (D21), Discord posting reminders (D22), several campaign logos as a row under the captions (D23, worker protocol 3), Scout, which ranks bounties from uploaded screenshots (D24), requirement screenshots read per campaign (D25), and one page per campaign with footage picked from the laptop's folders after a confirm step (D26), and campaigns that hold bounties, with folders `Campaigns/<campaign>/<bounty>` (D27), footage-ready pings, auto-queue and clips per video (D28), review/post/views as tabs inside each bounty (D29), and live streams: watch Kick/Twitch channels, record on the laptop (`recorder.py`), clip 30-min `.ffconcat` chunks, hold renders until the rules are in (D30). 86 tests pass.
 - Captions are one fixed line, split by measured pixel width (render.py `_GLYPH_W`).
 - Render benchmark on the Pi: 45 s clip in 54 s (blurfill), so the Pi renders by default (D6).
 - The services run on the Pi, and the UI is bound to the Tailscale IP 100.x.y.z:8420. The laptop worker (`eastons-laptop`) renders Man On.

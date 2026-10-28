@@ -16,7 +16,18 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from starlette.datastructures import UploadFile as StarletteUpload
 
-from clipforge import analytics, briefs, costs, jobqueue, library, notify, pipeline, scout
+from clipforge import (
+    analytics,
+    bounties,
+    briefs,
+    costs,
+    jobqueue,
+    library,
+    live,
+    notify,
+    pipeline,
+    scout,
+)
 from clipforge.bounties import BountyIn, add_bounty, clip_counts, get_bounty, list_bounties
 from clipforge.campaigns import (
     CampaignIn,
@@ -48,6 +59,7 @@ templates.env.filters["num"] = lambda v: f"{v or 0:,}"
 templates.env.filters["logos"] = logo_list
 templates.env.filters["pct"] = lambda v: "—" if v is None else f"{v * 100:.0f}%"
 templates.env.filters["secs"] = lambda ms: f"{(ms or 0) / 1000:.0f}s"
+templates.env.filters["hm"] = lambda sec: f"{int(sec or 0) // 3600}h{int(sec or 0) % 3600 // 60:02d}"
 templates.env.filters["mmss"] = lambda ms: f"{(ms or 0) // 60000}:{(ms or 0) // 1000 % 60:02d}"
 
 PLATFORMS = ["tiktok", "youtube", "instagram", "x"]
@@ -319,7 +331,15 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         gets the new bounty, so Scout's "Add" works for a second episode too."""
         form = {k: v for k, v in dict(await request.form()).items() if v not in ("", None)}
         force = form.pop("force", None) == "on"
-        bounty = {"name": form.pop("bounty_name", "main"),
+        clip_live = form.pop("live_clip", None) == "true"
+        chans, bad = live.parse_channels(form.get("live_channels", ""))
+        if bad:
+            return back("/campaigns", f"Not a Kick or Twitch channel: {' '.join(bad)}"
+                        " (use e.g. kick.com/n3on)")
+        form["live_channels"] = " ".join(chans)
+        form["watch_live"] = bool(chans) or clip_live
+        bounty = {"live_clip": clip_live, "render_hold": clip_live,
+                  "name": form.pop("bounty_name", "main"),
                   "rate_usd": form.pop("rate_usd", 0),
                   "rate_per_views": int(form.pop("rate_mode", 1000)),
                   "min_views": form.pop("min_views", 0), "cap_usd": form.pop("cap_usd", None),
@@ -330,17 +350,29 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
             with tx(conn):
                 cid = existing["id"] if existing else add_campaign(conn, CampaignIn(**form),
                                                                    force=force)
-                add_bounty(conn, cid, BountyIn(**bounty))
+                if existing and (chans or clip_live):  # Scout's "Add & clip live" again
+                    conn.execute("UPDATE campaigns SET watch_live=1, live_channels=CASE WHEN"
+                                 " ?='' THEN live_channels ELSE ? END WHERE id=?",
+                                 (form["live_channels"], form["live_channels"], cid))
+                bid = add_bounty(conn, cid, BountyIn(**bounty))
         except (ValueError, TypeError) as e:
             return back("/campaigns", str(e).split("\n")[0][:200])
-        return back(f"/campaigns/{cid}", f"Bounty {bounty['name']} added" if existing
-                    else f"Campaign #{cid} added")
+        msg = (f"Bounty {bounty['name']} added" if existing else f"Campaign #{cid} added")
+        if clip_live:
+            return back(f"/campaigns/{cid}/bounties/{bid}",
+                        f"{msg}. Its live streams get clipped; clips render once you add the"
+                        " requirement screenshots below.")
+        return back(f"/campaigns/{cid}", msg)
 
     @app.get("/campaigns/{cid}")
     def campaign_page(request: Request, cid: int, conn: DB, msg: str = ""):
         c = _camp_or_404(conn, cid)
+        chans = live.parse_channels(c["live_channels"])[0]
         return page(request, "campaign.html", c=c, bounties=list_bounties(conn, cid), msg=msg,
                     library_dir=s.media_library_dir.name,
+                    channels=[(ch, live.channel_url(ch), live.channel_status(conn, ch))
+                              for ch in chans],
+                    sessions=live.sessions_for(conn, cid), live_dir=s.live_dir.name,
                     counts=conn.execute(
                         "SELECT COUNT(DISTINCT s.id) sources, COUNT(k.id) clips FROM sources s"
                         " LEFT JOIN candidates ca ON ca.source_id=s.id LEFT JOIN clips k ON"
@@ -388,7 +420,10 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
             add_logo(conn, cid, await logo.read())
         except ValueError as e:
             return back(f"/campaigns/{cid}", str(e))
-        return back(f"/campaigns/{cid}", "Logo added. New renders will include it.")
+        with tx(conn):
+            n = bounties.release_ready(conn, cid)
+        return back(f"/campaigns/{cid}", "Logo added. New renders will include it."
+                    + (f" Rendering {n} held clip(s)." if n else ""))
 
     @app.post("/campaigns/{cid}/logo/remove")
     def campaign_logo_remove(cid: int, conn: DB, rel: str = Form("")):
@@ -416,22 +451,50 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
                     sources=sources, files=files, new_files=[f for f in files if not f["queued"]],
                     folders=library.folders(conn), hosts=[s.host_name, *remote_hosts(conn)],
                     busy=busy, library_dir=s.media_library_dir.name, msg=msg,
-                    tabs=clip_counts(conn, bid))
+                    tabs=clip_counts(conn, bid), holds=bounties.hold_reasons(conn, b),
+                    held=bounties.held_count(conn, bid),
+                    sessions=live.sessions_for(conn, cid) if b["live_clip"] else [])
 
     @app.post("/campaigns/{cid}/bounties/{bid}/settings")
     def bounty_settings(cid: int, bid: int, conn: DB, rate_usd: float = Form(0),
                         rate_mode: int = Form(1000), min_views: int = Form(0),
                         cap_usd: str = Form(""), end_date: str = Form(""),
                         required_tags: str = Form(""), notes: str = Form(""),
-                        auto_queue: bool = Form(False), clips_wanted: int = Form(6)):
-        _bounty_or_404(conn, cid, bid)
-        conn.execute(
-            "UPDATE bounties SET rate_usd=?, rate_per_views=?, min_views=?, cap_usd=?,"
-            " end_date=?, required_tags=?, notes=?, auto_queue=?, clips_wanted=? WHERE id=?",
-            (rate_usd, rate_mode, min_views, float(cap_usd) if cap_usd.strip() else None,
-             end_date or None, required_tags.strip(), notes.strip(), int(auto_queue),
-             _clips(clips_wanted), bid))
+                        auto_queue: bool = Form(False), clips_wanted: int = Form(6),
+                        live_clip: bool = Form(False), render_hold: bool = Form(False)):
+        b = _bounty_or_404(conn, cid, bid)
+        with tx(conn):
+            conn.execute(
+                "UPDATE bounties SET rate_usd=?, rate_per_views=?, min_views=?, cap_usd=?,"
+                " end_date=?, required_tags=?, notes=?, auto_queue=?, clips_wanted=?,"
+                " live_clip=?, render_hold=? WHERE id=?",
+                (rate_usd, rate_mode, min_views, float(cap_usd) if cap_usd.strip() else None,
+                 end_date or None, required_tags.strip(), notes.strip(), int(auto_queue),
+                 _clips(clips_wanted), int(live_clip), int(render_hold), bid))
+            if b["render_hold"] and not render_hold:
+                bounties.release(conn, bid)  # unticking the hold renders what was waiting
         return back(f"/campaigns/{cid}/bounties/{bid}", "Saved")
+
+    @app.post("/campaigns/{cid}/bounties/{bid}/release")
+    def bounty_release(cid: int, bid: int, conn: DB):
+        _bounty_or_404(conn, cid, bid)
+        with tx(conn):
+            n = bounties.release(conn, bid)
+        return back(f"/campaigns/{cid}/bounties/{bid}",
+                    f"Rendering {n} clip(s) now" if n else "No longer holding renders")
+
+    @app.post("/campaigns/{cid}/live")
+    def campaign_live(cid: int, conn: DB, live_channels: str = Form(""),
+                      watch_live: bool = Form(False)):
+        _camp_or_404(conn, cid)
+        chans, bad = live.parse_channels(live_channels)
+        if bad:
+            return back(f"/campaigns/{cid}#live", f"Not a Kick or Twitch channel:"
+                        f" {' '.join(bad)} (use e.g. kick.com/n3on)")
+        conn.execute("UPDATE campaigns SET live_channels=?, watch_live=? WHERE id=?",
+                     (" ".join(chans), int(watch_live), cid))
+        return back(f"/campaigns/{cid}#live", "Saved. Channels are checked every"
+                    f" {s.live_check_s // 60} min.")
 
     @app.post("/campaigns/{cid}/bounties/{bid}/status")
     def bounty_status(cid: int, bid: int, conn: DB, status: str = Form(...)):
@@ -516,9 +579,12 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
     @app.post("/campaigns/{cid}/bounties/{bid}/docs/apply")
     def bounty_docs_apply(cid: int, bid: int, conn: DB):
         _bounty_or_404(conn, cid, bid)
-        changes = briefs.apply(conn, bid)
-        return back(f"/campaigns/{cid}/bounties/{bid}", "Updated " + "; ".join(changes)
-                    if changes else "Nothing new to apply")
+        with tx(conn):
+            changes = briefs.apply(conn, bid)
+            n = bounties.release_ready(conn, cid)
+        msg = "Updated " + "; ".join(changes) if changes else "Nothing new to apply"
+        return back(f"/campaigns/{cid}/bounties/{bid}",
+                    f"{msg}. Rendering {n} held clip(s)." if n else msg)
 
     @app.post("/campaigns/{cid}/bounties/{bid}/docs/{doc_id}/delete")
     def bounty_docs_delete(cid: int, bid: int, doc_id: int, conn: DB):
@@ -736,6 +802,21 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         if msg:
             notify.discord(msg)
         return {"ok": True, "files": n}
+
+    @app.get("/api/worker/live", dependencies=[Worker])
+    def api_live(host: str, conn: DB):
+        """Live sessions for this host's recorder (clipforge/recorder.py)."""
+        return live.for_recorder(conn, host)
+
+    @app.post("/api/worker/live/{session_id}", dependencies=[Worker])
+    def api_live_report(session_id: int, body: dict, conn: DB):
+        try:
+            msg = live.report(conn, session_id, body)
+        except ValueError as e:
+            raise HTTPException(404, str(e)) from e
+        if msg:
+            notify.discord(msg)
+        return {"ok": True}
 
     class DeferIn(BaseModel):
         seconds: float

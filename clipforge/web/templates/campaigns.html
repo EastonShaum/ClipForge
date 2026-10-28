@@ -29,7 +29,7 @@
 <form method="post" action="/campaigns" class="grid2">
   <label>Name <input name="name" required placeholder="e.g. Big Podcast Clips" value="{{ prefill.name or '' }}"></label>
   <label>Category
-    <select name="category">{% for cat in ['podcast','interview','gaming','other'] %}<option {{ 'selected' if prefill.category == cat }}>{{ cat }}</option>{% endfor %}</select>
+    <select name="category">{% for cat in ['podcast','interview','gaming','streamer','other'] %}<option {{ 'selected' if prefill.category == cat }}>{{ cat }}</option>{% endfor %}</select>
   </label>
   <label>Marketplace <input name="platform" value="clipping.net"></label>
   <label>First bounty <input name="bounty_name" placeholder="e.g. episode-4" value="{{ prefill.bounty_name or '' }}"></label>
@@ -46,6 +46,9 @@
   <label>End date <input name="end_date" type="date"></label>
   <label>YouTube RSS feeds to watch <input name="watch_feeds" placeholder="https://www.youtube.com/feeds/videos.xml?channel_id=…"></label>
   <label>Notes <input name="notes" value="{{ prefill.notes or '' }}"></label>
+  <label>Kick / Twitch channels <input name="live_channels" placeholder="kick.com/n3on (empty: found by name)" value="{{ prefill.live_channels or '' }}"></label>
+  <label><input type="checkbox" name="live_clip" value="true" {{ 'checked' if prefill.live }} style="width:auto">
+    Clip their live streams into this bounty. Clips render once you add the requirement screenshots.</label>
   <label class="row" style="grid-template-columns:auto 1fr"><input type="checkbox" name="force" style="width:auto"> Override blocklist</label>
   <button class="go">Add campaign</button>
 </form>

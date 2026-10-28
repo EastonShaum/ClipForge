@@ -36,6 +36,23 @@
   </details>
 </section>
 
+<section class="card" id="live">
+  <h2>Live streams</h2>
+  <div class="small muted">ClipForge checks these channels every few minutes. When the streamer goes live you get a Discord ping, and the laptop records the stream to {{ live_dir }}\{{ c.media_folder or c.name }}. A bounty with “Clip live streams” on gets clips every 30 min while they're live.</div>
+  {% for ch, url, st in channels %}
+  <div class="row small"><a href="{{ url }}" target="_blank" rel="noopener">{{ ch }}</a>
+    {% if st %}<span class="{{ 'chip live' if st.state == 'live' else 'status-failed' if st.state not in ('offline',) else 'muted' }}">{{ st.state }}</span><span class="muted">checked {{ st.at[11:16] }} UTC</span>{% else %}<span class="muted">not checked yet</span>{% endif %}</div>
+  {% endfor %}
+  {% include "_live_sessions.html" %}
+  <form method="post" action="/campaigns/{{ c.id }}/live" class="grid2">
+    <label>Kick / Twitch channels <input name="live_channels" value="{{ c.live_channels }}" placeholder="kick.com/n3on twitch.tv/n3on"></label>
+    <label><input type="checkbox" name="watch_live" value="true" {{ 'checked' if c.watch_live }} style="width:auto">
+      Watch: ping me and record when they go live, even with no live bounty (they often run campaigns)</label>
+    <button class="go small">Save</button>
+  </form>
+  <div class="small muted">Leave channels empty and ClipForge tries kick.com/ and twitch.tv/ with the campaign's name.</div>
+</section>
+
 <section class="card">
   <h2>Logos</h2>
   <div class="row small">

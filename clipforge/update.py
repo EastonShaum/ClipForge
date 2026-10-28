@@ -18,7 +18,7 @@ log = logging.getLogger(__name__)
 REPO = Path(__file__).resolve().parent.parent
 VERSION_FILE = REPO / ".clipforge-version"
 # Never overwritten by an update: local secrets, local data, the local venv.
-KEEP = {".env", "data", ".venv", ".clipforge-version", "Campaigns"}
+KEEP = {".env", "data", ".venv", ".clipforge-version", "Campaigns", "Live"}
 UPDATE_EXIT_CODE = 3
 
 

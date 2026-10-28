@@ -22,6 +22,14 @@ class Settings(BaseSettings):
     media_cap_gb: float = 5.0  # hard cap for raw media on this host
     min_free_gb: float = 2.0  # refuse downloads below this much free disk
     raw_retention_hours: int = 48  # delete raw source media this long after its clips render
+    # Live streams (D30). Recordings go here on the laptop, outside the media library so they
+    # don't show up as footage; they're deleted live_keep_hours after the stream ends, once
+    # nothing still needs them.
+    live_dir: Path = ROOT / "Live"
+    live_keep_hours: int = 72
+    live_check_s: int = 120  # how often the Pi checks watched channels
+    live_chunk_min: int = 30  # clip the recording in chunks this long
+    live_clips_per_chunk: int = 3
     max_download_height: int = 1080
 
     # Host identity: "pi" for the orchestrator, anything else for a remote worker.

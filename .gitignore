@@ -9,3 +9,4 @@ __pycache__/
 *.part.mp4
 test.txt
 .clipforge-version
+Live/

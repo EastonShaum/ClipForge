@@ -7,11 +7,13 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from clipforge import notify
+from clipforge.bounties import held_count, hold_reasons
 from clipforge.config import Settings, get_settings
 
 LATE_GRACE = timedelta(hours=2)  # a slot missed by more than this is skipped, not sent late
 ENDING_SOON_DAYS = 3
 SUBMIT_AFTER = timedelta(minutes=30)  # give a fresh post time to be submitted before nagging
+HELD_REPEAT = timedelta(hours=3)  # clips waiting on requirements: first ping at once, then this
 # "Man On · episode-4"; a migrated campaign's lone "main" bounty shows just the campaign.
 LABEL = "CASE WHEN b.name IS NULL OR b.name='main' THEN cp.name ELSE cp.name || ' · ' || b.name END"
 
@@ -117,12 +119,37 @@ def digest_message(conn: sqlite3.Connection, s: Settings, now_utc: datetime,
     return "\n".join(lines) or None
 
 
+def held_messages(conn: sqlite3.Connection, s: Settings, now_utc: datetime) -> list[str]:
+    """Bounties whose clips are picked but held until their requirements are in (D30)."""
+    out = []
+    rows = conn.execute(
+        f"SELECT b.*, {LABEL} label FROM bounties b JOIN campaigns cp ON cp.id=b.campaign_id"
+        " WHERE b.render_hold=1 AND b.status='active' AND cp.status='active'").fetchall()
+    for b in rows:
+        n, missing = held_count(conn, b["id"]), hold_reasons(conn, b)
+        if not n or not missing:
+            continue
+        key = f"held-ping:{b['id']}"
+        last = conn.execute("SELECT value FROM settings_kv WHERE key=?", (key,)).fetchone()
+        if last and now_utc - datetime.fromisoformat(last["value"]) < HELD_REPEAT:
+            continue
+        conn.execute("INSERT INTO settings_kv (key, value) VALUES (?, ?) ON CONFLICT(key)"
+                     " DO UPDATE SET value=excluded.value", (key, now_utc.isoformat()))
+        out.append(f"⏸️ **{n} clip(s) for {b['label']} are picked and waiting to render.** "
+                   f"Still needed: {', '.join(missing)}. Add them (or tap Render now): "
+                   f"{s.public_base_url}/campaigns/{b['campaign_id']}/bounties/{b['id']}#rules")
+    return out
+
+
 def tick(conn: sqlite3.Connection, now_utc: datetime | None = None) -> list[str]:
     """Send whatever reminders are due. Returns what was sent (for tests and logs)."""
     s = get_settings()
     now_utc = now_utc or datetime.now(ZoneInfo("UTC"))
     local = now_utc.astimezone(ZoneInfo(s.timezone))
     sent = []
+    for msg in held_messages(conn, s, now_utc):
+        notify.discord(msg)
+        sent.append(msg)
     due = [("slot", t) for t in s.post_slots] + [("digest", s.digest_time)]
     for kind, hhmm in due:
         if not _due(local, hhmm) or not _once(

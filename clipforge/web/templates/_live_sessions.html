@@ -1,0 +1,11 @@
+{% for ls in sessions %}
+<div class="row small">
+  {% if ls.state == 'live' %}<span class="chip live">● live</span>{% else %}<span class="chip">ended</span>{% endif %}
+  <span>{{ ls.channel }} · {{ ls.started_at[:16].replace('T', ' ') }} UTC{% if ls.title %} · “{{ ls.title[:60] }}”{% endif %}</span>
+  <span class="muted">{{ ls.recorded_s|hm }} recorded{% if ls.bytes %} ({{ "%.1f"|format(ls.bytes / 1e9) }} GB){% endif %} · {{ ls.chunks }} chunk(s){% if ls.chunks %}, {{ ls.queued }} clipping{% endif %}
+    {% if ls.state == 'live' and not ls.host %} · <span class="status-failed">not recording: laptop worker offline</span>
+    {% elif ls.state == 'live' and ls.rec_error and not ls.recording %} · <span class="status-failed">{{ ls.rec_error[:120] }}</span>{% endif %}
+    {% if not ls.bounty_id %} · recorded only (no live bounty){% endif %}
+    {% if ls.purged_at %} · recording deleted{% endif %}</span>
+</div>
+{% endfor %}

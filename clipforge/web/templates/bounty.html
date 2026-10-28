@@ -14,6 +14,25 @@
 {% if tags %}<div class="small">Caption tags: {{ tags }}</div>{% endif %}
 {% if b.notes %}<div class="small muted">{{ b.notes }}</div>{% endif %}
 
+{% if b.render_hold %}
+<section class="card hold">
+  <div><b>⏸️ Renders on hold{% if held %}: {{ held }} clip(s) picked and waiting{% endif %}.</b></div>
+  {% if holds %}<div class="small">Still needed: {{ holds|join(', ') }}. Add them under Requirements below{% if 'campaign logo' in holds %} and on the <a href="/campaigns/{{ c.id }}">campaign page</a>{% endif %}; rendering starts by itself once they're in.</div>{% endif %}
+  <form method="post" action="/campaigns/{{ c.id }}/bounties/{{ b.id }}/release" class="row">
+    <button class="small">Render now{% if holds %} anyway{% endif %}</button>
+  </form>
+</section>
+{% endif %}
+
+{% if b.live_clip %}
+<section class="card">
+  <h2>Live streams</h2>
+  <div class="small">Clipping {{ c.name }}'s live streams every 30 min while they're live{% if not c.live_channels %}; no channel set yet, so ClipForge tries kick.com/ and twitch.tv/ with the name{% else %} ({{ c.live_channels }}){% endif %}. <a href="/campaigns/{{ c.id }}#live">Channels</a></div>
+  {% include "_live_sessions.html" %}
+  {% if not sessions %}<div class="small muted">Not live since this was set up.</div>{% endif %}
+</section>
+{% endif %}
+
 <section class="card">
   <h2>Footage</h2>
   <div class="small">Put this bounty's videos in <b>{{ library_dir }}\{{ (b.media_folder or '…').replace('/', '\\') }}</b> on the laptop (subfolders are fine). New files show up here within a minute.</div>
@@ -55,7 +74,7 @@
     <tr>
       <td>{% if s.url.startswith('http') %}<a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.title or s.url }}</a>{% else %}{{ s.title or s.url.replace('\\','/').split('/')[-1] }}{% endif %}
         {% if s.last_error and s.status != 'rendered' %}<div class="small status-failed">{{ s.last_error[:160] }}</div>{% endif %}</td>
-      <td class="status-{{ s.status }}">{{ s.status }}</td>
+      <td class="status-{{ s.status }}">{{ 'waiting for rules' if s.status == 'selected' and b.render_hold else s.status }}</td>
       <td class="n">{{ s.kept or 0 }}</td>
       <td>{% if s.status in ['failed','new','fetched','transcribed'] %}
         <form method="post" action="/sources/{{ s.id }}/retry"><button class="small">Retry</button></form>{% endif %}</td>
@@ -67,7 +86,7 @@
 </section>
 
   {% set br = brief %}
-<section class="card">
+<section class="card" id="rules">
   <details {{ 'open' if docs and not docs[-1].applied_at }}>
     <summary>Requirements ({{ docs|length }} screenshot{{ '' if docs|length == 1 else 's' }})</summary>
     <div class="small" style="display:grid;gap:6px;margin-top:8px">
@@ -119,6 +138,10 @@
     <label>Clips per video <input name="clips_wanted" type="number" min="1" max="18" value="{{ b.clips_wanted }}"></label>
     <label><input type="checkbox" name="auto_queue" value="true" {{ 'checked' if b.auto_queue }} style="width:auto">
       Auto-queue: clip new videos in the folder as soon as they finish downloading (skips the confirm step)</label>
+    <label><input type="checkbox" name="live_clip" value="true" {{ 'checked' if b.live_clip }} style="width:auto">
+      Clip live streams: record {{ c.name }}'s Kick/Twitch streams and clip them every 30 min</label>
+    <label><input type="checkbox" name="render_hold" value="true" {{ 'checked' if b.render_hold }} style="width:auto">
+      Hold renders until the requirements (and a logo, if they ask for one) are in</label>
     <button class="go small">Save</button>
   </form>
   {% if not b.end_date %}<div class="small muted">No end date: you won't get an "ending soon" reminder.</div>{% endif %}

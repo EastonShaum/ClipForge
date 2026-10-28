@@ -237,3 +237,38 @@ CREATE TABLE IF NOT EXISTS bounties (
     created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
     UNIQUE (campaign_id, name)
 );
+
+-- One row per broadcast of a watched streamer (campaigns.live_channels). The Pi sees it go live;
+-- the laptop records it in pieces and reports .ffconcat chunks, which become sources of the
+-- campaign's live bounty (bounties.live_clip). Watch-only campaigns are recorded, not clipped.
+CREATE TABLE IF NOT EXISTS live_sessions (
+    id              INTEGER PRIMARY KEY,
+    campaign_id     INTEGER NOT NULL REFERENCES campaigns(id),
+    bounty_id       INTEGER REFERENCES bounties(id),        -- NULL until a live bounty exists
+    channel         TEXT NOT NULL,                          -- kick.com/n3on | twitch.tv/n3on
+    stream_key      TEXT NOT NULL UNIQUE,                   -- channel:stream id (one per broadcast)
+    title           TEXT NOT NULL DEFAULT '',
+    dir             TEXT NOT NULL,                          -- under live_dir on the recording host
+    name            TEXT NOT NULL,                          -- chunk title prefix, "N3on live 10-28"
+    host            TEXT,                                   -- the machine recording it
+    state           TEXT NOT NULL DEFAULT 'live',           -- live | ended
+    started_at      TEXT NOT NULL,
+    last_live_at    TEXT NOT NULL,
+    ended_at        TEXT,
+    recording       INTEGER NOT NULL DEFAULT 0,             -- last report: recorder running
+    recorded_s      REAL NOT NULL DEFAULT 0,
+    bytes           INTEGER NOT NULL DEFAULT 0,
+    rec_error       TEXT,
+    reported_at     TEXT,
+    finalized_at    TEXT,                                   -- last chunk written after the end
+    purged_at       TEXT                                    -- recording deleted from the host
+);
+
+CREATE TABLE IF NOT EXISTS live_chunks (
+    id              INTEGER PRIMARY KEY,
+    session_id      INTEGER NOT NULL REFERENCES live_sessions(id),
+    path            TEXT NOT NULL,                          -- .ffconcat on the recording host
+    overlap_ms      INTEGER NOT NULL DEFAULT 0,             -- repeated from the previous chunk
+    source_id       INTEGER REFERENCES sources(id),         -- set once queued for clipping
+    UNIQUE (session_id, path)
+);

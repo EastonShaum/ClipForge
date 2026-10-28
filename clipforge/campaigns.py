@@ -33,6 +33,8 @@ class CampaignIn(BaseModel):
     notes: str = ""
     status: str = Field(default="active")
     media_folder: str | None = None  # under the media library; defaults to folder_name(name)
+    live_channels: str = ""  # "kick.com/n3on twitch.tv/n3on" (D30)
+    watch_live: bool = False  # ping and record when they go live, even with no live bounty
 
 
 def effective_per_1k(rate_usd: float, rate_per_views: int) -> float:

@@ -1,13 +1,14 @@
-"""Periodic housekeeping: poll campaign feeds, delete old raw media, end expired bounties,
-send posting reminders."""
+"""Periodic housekeeping: poll campaign feeds, check watched streamers for live streams, delete
+old raw media, end expired bounties, release held renders, send reminders."""
 
 import logging
 import signal
 import time
 
-from clipforge import costs, notify, reminders
+from clipforge import costs, live, notify, reminders
+from clipforge.bounties import release_ready
 from clipforge.config import get_settings
-from clipforge.db import session, utc_in, utcnow
+from clipforge.db import session, tx, utc_in, utcnow
 from clipforge.ingest import poll_feeds
 from clipforge.stages.fetch import cleanup_raw
 
@@ -57,7 +58,7 @@ def run(poll_every_s: int = 1800, cleanup_every_s: int = 3600):
 
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
-    last_poll = last_clean = last_remind = 0.0
+    last_poll = last_clean = last_remind = last_live = 0.0
     while not stop:
         now = time.monotonic()
         try:
@@ -67,8 +68,16 @@ def run(poll_every_s: int = 1800, cleanup_every_s: int = 3600):
                 if n:
                     log.info("feed poll added %d sources", n)
                 last_poll = now
+            if now - last_live >= get_settings().live_check_s:
+                last_live = now
+                with session() as conn:
+                    for msg in live.check(conn):
+                        notify.discord(msg)
             if now - last_remind >= 60:
                 with session() as conn:
+                    with tx(conn):
+                        if n := release_ready(conn):
+                            log.info("released %d held renders", n)
                     for msg in reminders.tick(conn):
                         log.info("reminder sent: %s", msg.splitlines()[0])
                 last_remind = now
