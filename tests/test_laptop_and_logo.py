@@ -72,7 +72,7 @@ def _pixel(video: Path, t: float, x: int, y: int) -> tuple[int, int, int]:
 
 
 def test_logo_is_shrunk_and_burned_into_every_clip(conn, campaign_id, settings, tmp_path):
-    from clipforge.stages.render import HOOK_X, LOGO_H, LOGO_PAD, LOGO_Y
+    from clipforge.stages.render import HOOK_X, LOGO_STRIP_H, placement
 
     rel = add_logo(conn, campaign_id, _red_png(tmp_path / "logo.png"))
     stored = settings.assets_dir / rel
@@ -85,13 +85,13 @@ def test_logo_is_shrunk_and_burned_into_every_clip(conn, campaign_id, settings, 
     clip = conn.execute("SELECT path FROM clips LIMIT 1").fetchone()
     assert clip, conn.execute("SELECT last_error FROM jobs WHERE last_error IS NOT NULL").fetchall()
     video = settings.clips_dir / clip["path"]
-    cx, cy = HOOK_X, LOGO_Y + LOGO_PAD[1] + LOGO_H // 2
+    logo_bottom, hook_top = placement("blurfill", 640, 360)  # the fixture's size
+    cx, cy = HOOK_X, logo_bottom - LOGO_STRIP_H // 2
     for t in (0.5, 6.0):  # present for the whole clip, not just the first frame
         r, g, b = _pixel(video, t, cx, cy)
         assert r > 200 and g < 60 and b < 60, (t, r, g, b)
-    from clipforge.stages.render import HOOK_BOTTOM
-    for t in (0.5, 6.0):  # the white hook card sits just above the logos for the whole clip
-        r, g, b = _pixel(video, t, HOOK_X, HOOK_BOTTOM - 8)
+    for t in (0.5, 6.0):  # the white hook card sits just under the picture for the whole clip
+        r, g, b = _pixel(video, t, HOOK_X, hook_top + 8)
         assert min(r, g, b) > 220, (t, r, g, b)
 
 
@@ -187,7 +187,7 @@ def test_render_works_when_paths_contain_filter_syntax(settings, tmp_path):
 
 def test_two_logos_render_side_by_side_and_can_be_removed(conn, campaign_id, settings, tmp_path):
     from clipforge.campaigns import logo_list, remove_logo
-    from clipforge.stages.render import HOOK_X, LOGO_H, LOGO_PAD, LOGO_Y
+    from clipforge.stages.render import HOOK_X, LOGO_STRIP_H, placement
 
     red = add_logo(conn, campaign_id, _red_png(tmp_path / "red.png"))
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "color=blue:s=900x900",
@@ -200,7 +200,7 @@ def test_two_logos_render_side_by_side_and_can_be_removed(conn, campaign_id, set
     add_source(conn, campaign_id, str(FIXTURE.resolve()))
     run_local(["fetch", "transcribe", "select", "render"], once=True, idle_s=0)
     video = settings.clips_dir / conn.execute("SELECT path FROM clips LIMIT 1").fetchone()["path"]
-    cy = LOGO_Y + LOGO_PAD[1] + LOGO_H // 2
+    cy = placement("blurfill", 640, 360)[0] - LOGO_STRIP_H // 2
     r, g, b = _pixel(video, 1.0, HOOK_X - 80, cy)  # left logo: red
     assert r > 200 and b < 60, (r, g, b)
     r, g, b = _pixel(video, 1.0, HOOK_X + 80, cy)  # right logo: blue

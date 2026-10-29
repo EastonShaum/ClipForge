@@ -2,7 +2,7 @@
 
 No word-by-word captions: TikTok and Shorts add their own auto-captions, and burned-in ones
 would sit on top of them. The hook card (hookcard.py, with color emojis) stays for the whole
-clip where the captions used to be, just below the picture; logos go under it.
+clip, just below the picture so it never covers it; logos go in the band above the picture.
 
 Placement follows platform safe zones on a 1080x1920 canvas: TikTok/Shorts/Reels UI covers
 roughly the top 10%, the bottom 25% and a ~120 px strip on the right.
@@ -15,20 +15,46 @@ from pathlib import Path
 
 from clipforge.config import Settings
 from clipforge.stages.hookcard import make_card
-from clipforge.tools import ffmpeg
+from clipforge.tools import ffmpeg, ffprobe
 
 W, H = 1080, 1920
 HOOK_MAX_W = 820  # px; clear of the frame edge and TikTok's right-hand buttons
 HOOK_X = 510  # center of the 100..920 band
-HOOK_BOTTOM = 1285  # card bottom edge; the logo strip starts just under it
-# Required brand logos: one row on a dark strip in the blurred band under the hook, centered
-# on the same column. Not over the picture: footage often carries its own marks there (Man On's
+PIC_SHIFT = 120  # blurfill: the picture sits this far above the canvas center
+GAP = 24  # px between the picture and the hook card / logo strip
+SAFE_TOP = 200  # TikTok's top UI ends around here
+HOOK_TOP_MAX = 1200  # a two-line card from here still ends above TikTok's bottom UI (~1440)
+# Required brand logos: one row on a dark strip in the blurred band above the picture, centered
+# on the hook's column. Not over the picture: footage often carries its own marks there (Man On's
 # has a Playmaker wordmark top-right) and a logo on top would hide them. The strip keeps white
-# logos readable. Ends above TikTok's bottom UI (~y=1440).
+# logos readable.
 LOGO_H = 120
 LOGO_GAP = 40
 LOGO_PAD = (24, 12)  # strip padding x, y
-LOGO_Y = 1300  # strip top; ends at ~1444
+LOGO_STRIP_H = LOGO_H + 2 * LOGO_PAD[1]
+
+
+def placement(layout: str, src_w: int, src_h: int) -> tuple[int, int]:
+    """(logo strip bottom, hook card top) for a source of this size: the card just under the
+    picture, the logos just above it. Crop fills the canvas, so there is no free band."""
+    if layout == "crop" or not (src_w and src_h):
+        return SAFE_TOP + LOGO_STRIP_H, HOOK_TOP_MAX - 80
+    pic_h = min(H, round(W * src_h / src_w / 2) * 2)
+    top = (H - pic_h) // 2 - PIC_SHIFT
+    return (max(SAFE_TOP + LOGO_STRIP_H, top - GAP),
+            min(HOOK_TOP_MAX, top + pic_h + GAP))
+
+
+def probe_size(path: str) -> tuple[int, int]:
+    """Video width/height, or (0, 0) if ffprobe can't tell (placement then falls back)."""
+    try:
+        r = subprocess.run([ffprobe(), "-v", "error", "-select_streams", "v:0", "-show_entries",
+                            "stream=width,height", "-of", "csv=p=0", path],
+                           capture_output=True, text=True, timeout=60)
+        w, h = r.stdout.strip().splitlines()[0].split(",")[:2]
+        return int(w), int(h)
+    except (OSError, ValueError, IndexError, subprocess.SubprocessError):
+        return 0, 0
 
 
 def _ts(ms: int) -> str:
@@ -64,7 +90,7 @@ def build_ass(dur_ms: int, font: str, disclosure: str) -> str:
 
 
 def filter_graph(layout: str, ass_path: Path | None, fonts_dir: Path, logos: int = 0,
-                 hook: bool = False) -> str:
+                 hook: bool = False, src: tuple[int, int] = (1920, 1080)) -> str:
     """Video filter graph. Input 0 is the source; inputs 1..logos are logo PNGs, then the hook
     card PNG if there is one. Single-image inputs repeat their frame for the whole clip."""
     if layout == "crop":
@@ -79,6 +105,7 @@ def filter_graph(layout: str, ass_path: Path | None, fonts_dir: Path, logos: int
             f"[b]scale={W}:-2[fg];"
             f"[bg][fg]overlay=(W-w)/2:(H-h)/2-120,setsar=1[base]"
         )
+    logo_bottom, hook_top = placement(layout, *src)
     graph, cur = [base], "[base]"
     if logos:
         px, py = LOGO_PAD
@@ -89,10 +116,10 @@ def filter_graph(layout: str, ass_path: Path | None, fonts_dir: Path, logos: int
                      + f"hstack=inputs={logos}[row0]" if logos > 1 else "[l1]null[row0]")
         graph.append(f"[row0]pad=iw+{2 * px - LOGO_GAP}:ih+{2 * py}:{px - LOGO_GAP // 2}:{py}:"
                      f"color=black@0.55,scale='min(iw,{HOOK_MAX_W})':-1[row]")
-        graph.append(f"{cur}[row]overlay={HOOK_X}-w/2:{LOGO_Y}:format=auto[logo]")
+        graph.append(f"{cur}[row]overlay={HOOK_X}-w/2:{logo_bottom}-h:format=auto[logo]")
         cur = "[logo]"
     if hook:
-        graph.append(f"{cur}[{logos + 1}:v]overlay={HOOK_X}-w/2:{HOOK_BOTTOM}-h:format=auto[hook]")
+        graph.append(f"{cur}[{logos + 1}:v]overlay={HOOK_X}-w/2:{hook_top}:format=auto[hook]")
         cur = "[hook]"
     if ass_path:  # the on-screen disclosure label
         graph.append(f"{cur}ass={_filter_path(ass_path)}:fontsdir={_filter_path(fonts_dir)}[v]")
@@ -129,7 +156,8 @@ def render(s: Settings, *, media_path: str, start_ms: int, end_ms: int, hook: st
         *[a for p in logo_paths or [] for a in ("-i", p)],
         *(["-i", str(card)] if has_card else []),
         "-filter_complex", filter_graph(layout or s.render_layout, ass, s.fonts_dir,
-                                        logos=len(logo_paths or []), hook=has_card),
+                                        logos=len(logo_paths or []), hook=has_card,
+                                        src=probe_size(media_path)),
         "-map", "[v]", "-map", "0:a:0?",
         "-af", "loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000",
         "-c:v", "libx264", "-preset", s.render_preset, "-crf", str(s.render_crf),
