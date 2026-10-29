@@ -11,6 +11,8 @@ def settings(tmp_path, monkeypatch):
     monkeypatch.setenv("CF_TRANSCRIBE_PROVIDER", "fake")
     monkeypatch.setenv("CF_SELECT_PROVIDER", "fake")
     monkeypatch.setenv("CF_DISCORD_WEBHOOK_URL", "")
+    monkeypatch.setenv("CF_TIKTOK_CLIENT_KEY", "")  # never the real app's keys from .env
+    monkeypatch.setenv("CF_TIKTOK_CLIENT_SECRET", "")
     monkeypatch.setenv("CF_WORKER_TOKEN", "test-token")
     monkeypatch.setenv("CF_MIN_CLIP_S", "8")
     monkeypatch.setenv("CF_MAX_CLIP_S", "15")

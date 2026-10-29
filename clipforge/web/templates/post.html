@@ -2,6 +2,11 @@
 {% block title %}Post · {{ b.name }} · ClipForge{% endblock %}
 {% block content %}
 {% include "_bounty_head.html" %}
+{% if tt.configured %}<div class="row small">
+  {% if tt.connected %}TikTok connected: "Send to TikTok inbox" puts a draft in your TikTok app.
+    <form method="post" action="/auth/tiktok/disconnect" style="display:inline"><button class="small">Disconnect</button></form>
+  {% else %}<a class="btn" href="/auth/tiktok">Connect TikTok</a> to send drafts to your inbox.{% endif %}
+</div>{% endif %}
 {% for c in clips %}
 <article class="card" id="clip{{ c.id }}">
   <div class="row"><span class="chip">post to: {{ c.todo|join(', ') }}</span>
@@ -14,6 +19,14 @@
     <a class="btn go big" href="/media/clips/{{ c.path }}" download="clip{{ c.id }}.mp4">Save video</a>
     <button type="button" class="big" onclick="copyText('cap{{ c.id }}', this)">Copy caption</button>
   </div>
+  {% if tt.connected and 'tiktok' in c.todo %}{% set u = tt.uploads.get(c.id) %}
+  <div class="row">
+    <form method="post" action="/clips/{{ c.id }}/tiktok"><input type="hidden" name="next" value="{{ here }}">
+      <button class="big">{{ 'Send again to TikTok inbox' if u else 'Send to TikTok inbox' }}</button></form>
+    {% if u %}<span class="chip">{{ u.status }}{% if u.error %}: {{ u.error }}{% endif %}</span>
+    <form method="post" action="/tiktok/{{ u.publish_id }}/check"><input type="hidden" name="next" value="{{ here }}#clip{{ c.id }}">
+      <button class="small">Check</button></form>{% endif %}
+  </div>{% endif %}
   <form method="post" action="/clips/{{ c.id }}/caption" class="grid2" style="grid-template-columns:1fr">
     <input type="hidden" name="next" value="{{ here }}">
     <textarea id="cap{{ c.id }}" name="caption">{{ c.caption }}</textarea>

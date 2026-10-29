@@ -208,3 +208,11 @@ Each bounty page has tabs: **Review · Post · Posted & views · Footage & setti
 **Update (2026-10-29):** the card covered the bottom of the picture, so it now sits just under the picture (render.py `placement`, from the source's probed size) and the logo strip moved to the band above the picture.
 
 **Update 2 (2026-10-29):** the burned-in card is now off by default (`CF_HOOK_CARD`). Apple doesn't license its emoji designs, so Easton adds the hook with TikTok's own text tool on his iPhone, which draws real Apple emojis. The Post page has a "Copy on-screen text" button for each clip. Turning the setting back on restores the card.
+
+## D32. TikTok drafts go to Easton's inbox; he still publishes every post (2026-10-29)
+Easton asked whether ClipForge could post for him. The rule against automated posting is now narrowed: ClipForge may **upload a draft to his TikTok inbox** with the official Content Posting API (`video.upload` scope, no Direct Post). He opens the draft in the app, adds the on-screen text (real Apple emojis, see D31), pastes the caption, turns on the disclosure toggle and posts it himself. Nothing publishes without him.
+- **Why a sandbox app:** TikTok's app review rejects apps "for private or personal use", and ClipForge is exactly that. A sandbox app works for up to 10 accounts the developer owns, with no review. It is meant for testing, so TikTok may stop it working; then we go back to the manual Save video flow.
+- **OAuth:** Login Kit for web, redirect to `https://raspberrypi.your-tailnet.ts.net:8443/auth/tiktok/callback` (Tailscale serve, tailnet only; port 443 belongs to Pi-hole). Tokens are kept in `settings_kv` (the DB is gitignored); the client key and secret are in `.env`.
+- **Upload:** one tap per clip on the Post page (`/clips/{id}/tiktok`), FILE_UPLOAD in 5–64 MB chunks, status checked on demand. The post URL still gets logged by hand.
+- The terms and privacy pages TikTok asks for are `/terms` and `/privacy`.
+

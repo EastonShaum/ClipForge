@@ -84,6 +84,11 @@ class Settings(BaseSettings):
 
     # Notifications
     discord_webhook_url: str = ""
+
+    # TikTok inbox uploads (D32): a sandbox app with only the video.upload scope.
+    tiktok_client_key: str = ""
+    tiktok_client_secret: str = ""
+    tiktok_redirect_uri: str = "https://raspberrypi.your-tailnet.ts.net:8443/auth/tiktok/callback"
     # Posting reminders, in local time. One slot = one post per platform per day (warm-up week).
     # Sprout Social 2026: TikTok's best window is Tue-Fri 2-6 pm (research/hooks-playbook.md §7).
     timezone: str = "America/Denver"

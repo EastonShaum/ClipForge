@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Annotated
 from urllib.parse import quote
 
+import httpx
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -27,6 +28,7 @@ from clipforge import (
     notify,
     pipeline,
     scout,
+    tiktok,
 )
 from clipforge.bounties import BountyIn, add_bounty, clip_counts, get_bounty, list_bounties
 from clipforge.campaigns import (
@@ -150,6 +152,55 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
     # The commit this process loaded. Remote workers must run exactly this (see update.py).
     code_version = repo_version() if s.require_worker_version else None
 
+    # TikTok inbox drafts (D32). Connect once; each upload is one tap, and Easton posts it.
+    @app.get("/auth/tiktok")
+    def tiktok_connect(conn: DB):
+        if not tiktok.configured(s):
+            return back("/campaigns", "Add CF_TIKTOK_CLIENT_KEY and _SECRET to .env first")
+        return RedirectResponse(tiktok.authorize_url(conn, s), status_code=303)
+
+    @app.get("/auth/tiktok/callback")
+    def tiktok_callback(conn: DB, code: str = "", state: str = "", error: str = "",
+                        error_description: str = ""):
+        if error or not code:
+            return back("/campaigns", f"TikTok said no: {error_description or error or 'no code'}")
+        try:
+            with tiktok.client() as http:
+                a = tiktok.exchange_code(conn, s, code, state, http)
+        except (tiktok.TikTokError, httpx.HTTPError) as e:
+            return back("/campaigns", f"TikTok connect failed: {e}")
+        if "video.upload" not in a["scope"]:
+            return back("/campaigns", "Connected, but without the video.upload permission")
+        return back("/campaigns", "TikTok connected")
+
+    @app.post("/auth/tiktok/disconnect")
+    def tiktok_disconnect(conn: DB):
+        tiktok.disconnect(conn)
+        return back("/campaigns", "TikTok disconnected")
+
+    @app.post("/clips/{clip_id}/tiktok")
+    def tiktok_send(clip_id: int, conn: DB, next: str = Form("")):
+        to = _next(next, "/approved") + f"#clip{clip_id}"
+        row = conn.execute("SELECT path FROM clips WHERE id=?", (clip_id,)).fetchone()
+        if not row or not row["path"]:
+            return back(to, "That clip has no video yet")
+        try:
+            with tiktok.client() as http:
+                tiktok.send_to_inbox(conn, s, clip_id, s.clips_dir / row["path"], http)
+        except (tiktok.TikTokError, httpx.HTTPError, OSError) as e:
+            return back(to, f"TikTok upload failed: {e}")
+        return back(to, "Sent. TikTok will notify you in the app when the draft is ready.")
+
+    @app.post("/tiktok/{publish_id}/check")
+    def tiktok_check(publish_id: str, conn: DB, next: str = Form("")):
+        to = _next(next, "/approved")
+        try:
+            with tiktok.client() as http:
+                st = tiktok.refresh_status(conn, s, publish_id, http)
+        except (tiktok.TikTokError, httpx.HTTPError) as e:
+            return back(to, f"Couldn't check: {e}")
+        return back(to, f"TikTok status: {st}")
+
     # Terms and privacy pages for the TikTok developer app (TikTok asks for both URLs).
     @app.get("/terms")
     def terms(request: Request):
@@ -213,7 +264,9 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         clips = _clip_rows(conn, "approved", bid) + [
             r for r in _clip_rows(conn, "posted", bid) if r["todo"]]
         return _tab(request, conn, cid, bid, "post", clips=clips, platforms=PLATFORMS,
-                    reminders=PLATFORM_REMINDER, msg=msg)
+                    reminders=PLATFORM_REMINDER, msg=msg,
+                    tt={"configured": tiktok.configured(s), "connected": bool(tiktok.auth(conn)),
+                        "uploads": tiktok.latest_uploads(conn, [c["id"] for c in clips])})
 
     @app.get("/campaigns/{cid}/bounties/{bid}/posted")
     def bounty_posted(request: Request, cid: int, bid: int, conn: DB, msg: str = ""):

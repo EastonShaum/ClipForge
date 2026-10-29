@@ -272,3 +272,14 @@ CREATE TABLE IF NOT EXISTS live_chunks (
     source_id       INTEGER REFERENCES sources(id),         -- set once queued for clipping
     UNIQUE (session_id, path)
 );
+
+-- Drafts sent to the TikTok inbox (D32). Easton finishes and posts each one in the app.
+CREATE TABLE IF NOT EXISTS tiktok_uploads (
+    id              INTEGER PRIMARY KEY,
+    clip_id         INTEGER NOT NULL REFERENCES clips(id),
+    publish_id      TEXT NOT NULL UNIQUE,
+    status          TEXT NOT NULL,                          -- TikTok's: SEND_TO_USER_INBOX, FAILED…
+    error           TEXT,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    updated_at      TEXT
+);
