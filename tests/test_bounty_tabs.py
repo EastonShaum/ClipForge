@@ -83,3 +83,8 @@ def test_copy_post_links_one_per_line(client, conn):
     assert "not submitted" not in page  # all unsubmitted: one button is enough
     client.post("/posts/1/submitted", data={"next": here})
     assert "Copy 2 not submitted" in client.get(here).text
+
+
+def test_terms_and_privacy_pages(client):
+    assert "Terms of Service" in client.get("/terms").text
+    assert "open_id" in client.get("/privacy").text

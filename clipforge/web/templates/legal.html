@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} · ClipForge{% endblock %}
+{% block content %}
+<h1>{{ title }}</h1>
+<p class="small">Last updated 2026-10-29</p>
+{% if kind == "terms" %}
+<p>ClipForge is a private tool run by one person for their own TikTok account. It is not offered to the public, and no one else can sign up.</p>
+<h2>What it does</h2>
+<p>When the owner taps "Send to TikTok inbox", ClipForge uploads that one video to the owner's own TikTok inbox as a draft. It never publishes anything: the owner opens the draft in the TikTok app, edits it and decides whether to post it.</p>
+<h2>Use</h2>
+<p>Only the owner may use ClipForge, and only with videos they have the right to post. Use of TikTok through ClipForge is also governed by TikTok's own Terms of Service.</p>
+<h2>No warranty</h2>
+<p>ClipForge is provided as is, without any warranty. The owner can stop running it at any time.</p>
+{% else %}
+<p>ClipForge is a private tool used only by its owner for their own TikTok account.</p>
+<h2>What it stores</h2>
+<ul>
+  <li>The TikTok account ID (open_id) and the access and refresh tokens TikTok issues after the owner logs in.</li>
+  <li>The status of each upload (TikTok's publish ID).</li>
+</ul>
+<h2>How it is used</h2>
+<p>The tokens are used only to upload videos the owner chose to the owner's TikTok inbox. Nothing is sold, shared or used for advertising.</p>
+<h2>Where it is kept</h2>
+<p>On the owner's own server, reachable only on their private network. Tokens are deleted when the owner disconnects TikTok, and access can be revoked at any time in TikTok's settings under "Manage app permissions".</p>
+{% endif %}
+{% endblock %}

@@ -150,6 +150,15 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
     # The commit this process loaded. Remote workers must run exactly this (see update.py).
     code_version = repo_version() if s.require_worker_version else None
 
+    # Terms and privacy pages for the TikTok developer app (TikTok asks for both URLs).
+    @app.get("/terms")
+    def terms(request: Request):
+        return page(request, "legal.html", kind="terms", title="Terms of Service")
+
+    @app.get("/privacy")
+    def privacy(request: Request):
+        return page(request, "legal.html", kind="privacy", title="Privacy Policy")
+
     @app.get("/health")
     def health(conn: DB):
         conn.execute("SELECT 1").fetchone()
