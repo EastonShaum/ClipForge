@@ -123,7 +123,7 @@ def run_handler(s: Settings, kind: str, ctx: dict, out_dir: Path | None = None) 
             out = (out_dir or s.clips_dir) / ctx["out_rel"]
             return render_stage.render(s, media_path=ctx["media_path"],
                                        start_ms=ctx["start_ms"], end_ms=ctx["end_ms"],
-                                       hook=ctx["hook"], out_path=out, work=work,
+                                       hook=ctx["hook"] if s.hook_card else "", out_path=out, work=work,
                                        disclosure=(_onscreen_disclosure(ctx.get("disclosure"))
                                                    if s.onscreen_disclosure else ""),
                                        logo_paths=_logos(s, ctx.get("logo_rels", [])))

@@ -206,3 +206,5 @@ Each bounty page has tabs: **Review · Post · Posted & views · Footage & setti
 - **Disclosure:** the burned-in "Paid partnership #ad" label is off (`CF_ONSCREEN_DISCLOSURE=false`). Easton turns on the platform's own paid-partnership/branded-content toggle on every post instead, and the post caption still starts with `#ad`. Turn the setting back on if a campaign or platform asks for the label in the video.
 
 **Update (2026-10-29):** the card covered the bottom of the picture, so it now sits just under the picture (render.py `placement`, from the source's probed size) and the logo strip moved to the band above the picture.
+
+**Update 2 (2026-10-29):** the burned-in card is now off by default (`CF_HOOK_CARD`). Apple doesn't license its emoji designs, so Easton adds the hook with TikTok's own text tool on his iPhone, which draws real Apple emojis. The Post page has a "Copy on-screen text" button for each clip. Turning the setting back on restores the card.

@@ -6,7 +6,9 @@
 <article class="card" id="clip{{ c.id }}">
   <div class="row"><span class="chip">post to: {{ c.todo|join(', ') }}</span>
     {% for p in c.posts %}<span class="chip">✓ {{ p.platform }}</span>{% endfor %}</div>
-  <div class="hook">{{ c.hook_text }}</div>
+  <div class="row"><span class="hook" style="flex:1">{{ c.hook_text }}</span>
+    <button type="button" class="big" data-hook="{{ c.hook_text }}"
+            onclick="copyValue(this.dataset.hook, this)">Copy on-screen text</button></div>
   <video src="/media/clips/{{ c.path }}" controls playsinline preload="metadata"></video>
   <div class="row">
     <a class="btn go big" href="/media/clips/{{ c.path }}" download="clip{{ c.id }}.mp4">Save video</a>

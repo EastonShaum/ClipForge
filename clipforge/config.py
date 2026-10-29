@@ -66,6 +66,9 @@ class Settings(BaseSettings):
     # Burned-in "Paid partnership #ad" label. Off by Easton's call (2026-10-29): he turns on the
     # platform's own paid-partnership toggle instead, and the post caption still starts with #ad.
     onscreen_disclosure: bool = False
+    # Burned-in hook card. Off by Easton's call (2026-10-29): he adds the hook in TikTok's own
+    # text tool on his iPhone (real Apple emojis), copied from the Post page.
+    hook_card: bool = False
     emoji_font: str = ""  # color-emoji font for the hook card; empty = find the system one
     font_name: str = "Montserrat ExtraBold"
     fonts_dir: Path = ROOT / "assets" / "fonts"

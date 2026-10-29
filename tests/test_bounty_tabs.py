@@ -27,7 +27,8 @@ def test_tabs_show_only_this_bountys_clips(client, conn):
     r = client.post("/clips/1/review", data={"decision": "approved",
                                              "next": "/campaigns/1/bounties/1/review"})
     assert r.url.path == "/campaigns/1/bounties/1/review" and "Approved" in r.text
-    assert "Ep4 hook" in client.get("/campaigns/1/bounties/1/post").text
+    post = client.get("/campaigns/1/bounties/1/post").text
+    assert "Ep4 hook" in post and 'data-hook="Ep4 hook"' in post
     assert client.get("/review").url.path == "/campaigns/1/bounties/2/review"
 
 
