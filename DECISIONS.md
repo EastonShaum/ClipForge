@@ -215,4 +215,5 @@ Easton asked whether ClipForge could post for him. The rule against automated po
 - **OAuth:** Login Kit for web, redirect to `https://raspberrypi.your-tailnet.ts.net:8443/auth/tiktok/callback` (Tailscale serve, tailnet only; port 443 belongs to Pi-hole). Tokens are kept in `settings_kv` (the DB is gitignored); the client key and secret are in `.env`.
 - **Upload:** one tap per clip on the Post page (`/clips/{id}/tiktok`), FILE_UPLOAD in 5–64 MB chunks, status checked on demand. The post URL still gets logged by hand.
 - The terms and privacy pages TikTok asks for are `/terms` and `/privacy`.
+- **Confirmed working 2026-10-29:** the sandbox app connected and clip 23 reached SEND_TO_USER_INBOX.
 
