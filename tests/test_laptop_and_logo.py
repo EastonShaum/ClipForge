@@ -131,7 +131,7 @@ def test_render_context_carries_logo_for_remote_worker(conn, campaign_id, tmp_pa
     client.post("/sources", data={"campaign_id": str(campaign_id), "urls": WIN})
     r = client.post("/api/worker/claim", headers=H, json={
         "worker": "eastons-laptop-remote-42", "host": "eastons-laptop", "kinds": ["fetch"],
-        "protocol": 3})
+        "protocol": 4})
     assert r.status_code == 200 and r.json()["ctx"]["url"] == WIN
     # Skip ahead to a render job for this source and check its context.
     from clipforge.pipeline import build_context
