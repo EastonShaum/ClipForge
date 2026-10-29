@@ -95,7 +95,8 @@ def test_live_bounty_records_clips_and_holds_until_rules(client, conn, settings,
     # The recorder (here: the Pi itself, so the local worker can run the chunk) claims it.
     plan = client.get("/api/worker/live", headers=H, params={"host": "pi"}).json()
     sess = plan["sessions"][0]
-    assert sess["live"] and sess["url"] == "https://kick.com/n3on" and plan["chunk_s"] == 1800
+    assert sess["live"] and sess["url"] == "https://kick.com/n3on" and plan["chunk_s"] == 300
+    assert plan["piece_s"] == 30 and plan["overlap_s"] == 60
     d = tmp_path / "Live" / sess["dir"]
     _pieces(d)
     got = recorder.make_chunks(d, sess["name"], recording=False, final=False, chunk_s=20,
@@ -105,11 +106,25 @@ def test_live_bounty_records_clips_and_holds_until_rules(client, conn, settings,
                           "bytes": 1, "chunks": got["chunks"]})
     assert r.status_code == 200
     srcs = conn.execute("SELECT * FROM sources ORDER BY id").fetchall()
-    assert len(srcs) == 2 and srcs[1]["skip_ms"] > 0 and srcs[0]["clips_wanted"] == 3
+    assert len(srcs) == 2 and srcs[1]["skip_ms"] > 0 and srcs[0]["clips_wanted"] == 2
     assert srcs[0]["title"] == "x" and srcs[0]["bounty_id"] == b["id"]
+
+    r = client.post(f"/live/{sess['id']}/guests", data={"guests": "Alabama Barker,  Yera"})
+    assert "next chunks use these names" in r.text
+
+    # Live chunks get the live prompt, its lengths and the names (D33).
+    from clipforge.config import get_settings
+    from clipforge.pipeline import build_context
+    job = conn.execute("SELECT * FROM jobs WHERE kind='fetch' LIMIT 1").fetchone()
+    ctx = build_context(conn, get_settings(), dict(job) | {"kind": "select"})
+    assert "Streamer: N3on" in ctx["prompt"] and "Alabama Barker, Yera" in ctx["prompt"]
+    assert (ctx["min_s"], ctx["max_s"]) == (6.0, 25.0)
 
     run_local(["fetch", "transcribe", "select", "render"], once=True, idle_s=0)
     assert conn.execute("SELECT COUNT(*) FROM clips").fetchone()[0] == 0  # held
+    pv = conn.execute("SELECT DISTINCT pv.name FROM candidates c JOIN prompt_versions pv"
+                      " ON pv.id=c.prompt_version_id").fetchall()
+    assert pv and all(r[0].startswith("live-") for r in pv)
     assert conn.execute("SELECT COUNT(*) FROM jobs WHERE kind='render'").fetchone()[0] == 0
     # Moments wholly inside the second chunk's overlap were offered by the first chunk.
     skip = srcs[1]["skip_ms"]
@@ -130,6 +145,7 @@ def test_live_bounty_records_clips_and_holds_until_rules(client, conn, settings,
     assert f"Rendering {held} clip(s) now" in r.text
     run_local(["render"], once=True, idle_s=0)
     assert conn.execute("SELECT COUNT(*) FROM clips").fetchone()[0] == held
+    assert all("#n3on" in r[0] for r in conn.execute("SELECT caption FROM clips"))
     assert conn.execute("SELECT status FROM sources WHERE id=?",
                         (srcs[0]["id"],)).fetchone()[0] == "rendered"
 
@@ -189,3 +205,12 @@ def test_bad_channel_is_refused(client):
     r = client.post("/campaigns", data={"name": "X", "rate_usd": "1", "rate_mode": "1000",
                                         "live_channels": "youtube.com/@x"})
     assert "Not a Kick or Twitch channel: youtube.com/@x" in r.text
+
+
+def test_hashtags_name_the_streamer_and_the_guests_in_the_hook():
+    guests = "Alabama Barker, Adrien Broner (AB), Yera"
+    assert live.hashtags("N3on", guests, "N3on realized AB was FINISHED") == ["#n3on",
+                                                                             "#adrienbroner"]
+    assert live.hashtags("N3on", guests, "Alabama Barker brought FLOWERS") == [
+        "#n3on", "#alabamabarker"]
+    assert live.hashtags("N3on", guests, "a tab of absinthe") == ["#n3on"]  # "ab" inside a word

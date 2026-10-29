@@ -8,4 +8,11 @@
     {% if not ls.bounty_id %} · recorded only (no live bounty){% endif %}
     {% if ls.purged_at %} · recording deleted{% endif %}</span>
 </div>
+{% if ls.bounty_id and not ls.purged_at %}
+<form method="post" action="/live/{{ ls.id }}/guests" class="row small">
+  <input type="hidden" name="next" value="{{ request.url.path }}">
+  <label style="flex:1">Who's on stream (names go in hooks and hashtags)
+    <input name="guests" value="{{ ls.guests }}" placeholder="Alabama Barker, Yera, Adrien Broner (AB)"></label>
+  <button class="small">Save</button>
+</form>{% endif %}
 {% endfor %}

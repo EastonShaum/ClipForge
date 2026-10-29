@@ -54,9 +54,10 @@ def build_feedback(conn: sqlite3.Connection, campaign_id: int | None = None, k: 
     return "\n".join(lines)
 
 
-def pick_prompt_version(conn: sqlite3.Connection, rng: random.Random | None = None):
+def pick_prompt_version(conn: sqlite3.Connection, rng: random.Random | None = None,
+                        live: bool = False):
     """Weighted random choice among active prompt versions (the A/B split)."""
-    versions = active_versions(conn)
+    versions = active_versions(conn, live)
     if not versions:
         raise RuntimeError("no active prompt versions")
     rng = rng or random.Random()

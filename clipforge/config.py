@@ -28,8 +28,14 @@ class Settings(BaseSettings):
     live_dir: Path = ROOT / "Live"
     live_keep_hours: int = 72
     live_check_s: int = 120  # how often the Pi checks watched channels
-    live_chunk_min: int = 30  # clip the recording in chunks this long
-    live_clips_per_chunk: int = 3
+    # Live clips are short and fast (D33): the top clipper of N3on's Halloween stream posted
+    # 6-18 s clips 1-9 minutes after each moment. 5-min chunks get ours out in ~5-8 min.
+    live_chunk_min: int = 5  # clip the recording in chunks this long
+    live_clips_per_chunk: int = 2
+    live_candidates_requested: int = 4
+    live_min_clip_s: float = 6.0
+    live_max_clip_s: float = 25.0
+    live_layout: str = "crop"  # IRL footage fills the screen; blurred bars make people tiny
     max_download_height: int = 1080
 
     # Host identity: "pi" for the orchestrator, anything else for a remote worker.

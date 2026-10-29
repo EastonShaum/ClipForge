@@ -10,7 +10,7 @@ import logging
 import sqlite3
 from pathlib import Path
 
-from clipforge import costs, jobqueue, notify, scout
+from clipforge import costs, jobqueue, live, notify, scout
 from clipforge.campaigns import logo_list
 from clipforge.captions import build_caption
 from clipforge.config import Settings, get_settings
@@ -65,17 +65,20 @@ def build_context(conn: sqlite3.Connection, s: Settings, job: sqlite3.Row) -> di
     if kind == "select":
         src = _source(conn, job["source_id"])
         words = _words(conn, src["id"])
-        pv = pick_prompt_version(conn)
+        stream = live.stream_info(conn, src["id"])
+        pv = pick_prompt_version(conn, live=bool(stream))
         prompt = select_stage.build_prompt(
             s, pv["body"], words=words, title=src["title"], category=src["category"],
-            feedback=build_feedback(conn, None),
+            feedback=build_feedback(conn, None), live=stream,
         )
         try:
             costs.check_budget(conn, select_stage.estimate_usd(s, prompt))
         except costs.BudgetExceeded as e:
             raise Deferred(str(e), 6 * 3600) from e
+        lengths = ((s.live_min_clip_s, s.live_max_clip_s) if stream
+                   else (s.min_clip_s, s.max_clip_s))
         return {"source_id": src["id"], "prompt": prompt, "words": words,
-                "prompt_version_id": pv["id"]}
+                "prompt_version_id": pv["id"], "min_s": lengths[0], "max_s": lengths[1]}
     if kind == "render":
         cand = conn.execute("SELECT * FROM candidates WHERE id=?", (job["candidate_id"],)).fetchone()
         src = _source(conn, cand["source_id"])
@@ -83,7 +86,8 @@ def build_context(conn: sqlite3.Connection, s: Settings, job: sqlite3.Row) -> di
                 "media_path": src["media_path"],
                 "start_ms": cand["start_ms"], "end_ms": cand["end_ms"],
                 "hook": cand["hook_text"], "out_rel": f"{src['id']}/c{cand['id']}.mp4",
-                "disclosure": src["disclosure"], "logo_rels": logo_list(src["logo_path"])}
+                "disclosure": src["disclosure"], "logo_rels": logo_list(src["logo_path"]),
+                "layout": s.live_layout if live.stream_info(conn, src["id"]) else None}
     if kind == "scout":
         shot = _shot(conn, job)
         try:
@@ -117,13 +121,15 @@ def run_handler(s: Settings, kind: str, ctx: dict, out_dir: Path | None = None) 
         if kind == "transcribe":
             return transcribe_stage.transcribe(s, ctx["media_path"], work)
         if kind == "select":
-            cands, meta = select_stage.select(s, ctx["prompt"], ctx["words"])
+            cands, meta = select_stage.select(s, ctx["prompt"], ctx["words"],
+                                              ctx.get("min_s"), ctx.get("max_s"))
             return {"candidates": cands, "meta": meta}
         if kind == "render":
             out = (out_dir or s.clips_dir) / ctx["out_rel"]
             return render_stage.render(s, media_path=ctx["media_path"],
                                        start_ms=ctx["start_ms"], end_ms=ctx["end_ms"],
                                        hook=ctx["hook"] if s.hook_card else "", out_path=out, work=work,
+                                       layout=ctx.get("layout"),
                                        disclosure=(_onscreen_disclosure(ctx.get("disclosure"))
                                                    if s.onscreen_disclosure else ""),
                                        logo_paths=_logos(s, ctx.get("logo_rels", [])))
@@ -236,6 +242,9 @@ def apply_result(conn: sqlite3.Connection, s: Settings, job: sqlite3.Row, result
             camp = conn.execute("SELECT * FROM campaigns WHERE id=?",
                                 (cand["campaign_id"],)).fetchone()
             tags = f"{camp['required_tags']} {cand['bounty_tags'] or ''}"
+            if stream := live.stream_info(conn, cand["source_id"]):  # D33: #n3on #alabamabarker
+                tags += " " + " ".join(live.hashtags(
+                    stream["streamer"], stream["guests"], f"{cand['hook_text']} {cand['title']}"))
             caption = build_caption(title=cand["title"], hook=cand["hook_text"],
                                     category=camp["category"], required_tags=tags,
                                     caption_notes=camp["caption_notes"],

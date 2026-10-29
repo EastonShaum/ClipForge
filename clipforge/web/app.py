@@ -152,6 +152,12 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
     # The commit this process loaded. Remote workers must run exactly this (see update.py).
     code_version = repo_version() if s.require_worker_version else None
 
+    @app.post("/live/{session_id}/guests")
+    def live_guests(session_id: int, conn: DB, guests: str = Form(""), next: str = Form("")):
+        conn.execute("UPDATE live_sessions SET guests=? WHERE id=?",
+                     (" ".join(guests.split())[:500], session_id))
+        return back(_next(next, "/campaigns"), "Saved. The next chunks use these names.")
+
     # TikTok inbox drafts (D32). Connect once; each upload is one tap, and Easton posts it.
     @app.get("/auth/tiktok")
     def tiktok_connect(conn: DB):

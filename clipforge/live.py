@@ -3,8 +3,8 @@ the recording in chunks while the stream is still going.
 
 The Pi checks who is live (scheduler, every live_check_s) and keeps one live_sessions row per
 broadcast. The laptop's recorder (clipforge/recorder.py) asks which sessions to record, saves
-the stream as 2-minute pieces under live_dir, and lists them in 30-minute .ffconcat chunks that
-overlap by one piece, so a moment on a boundary is whole in one of them. Each chunk it reports
+the stream as 30-second pieces under live_dir, and lists them in 5-minute .ffconcat chunks that
+overlap by a minute (D33), so a moment on a boundary is whole in one of them. Each chunk it reports
 becomes a source of the campaign's live bounty and runs through the normal pipeline; the
 overlap is skipped when keeping candidates (sources.skip_ms). Watch-only campaigns are recorded
 so the footage is ready, but nothing is clipped (or paid for) until a live bounty exists."""
@@ -26,7 +26,8 @@ from clipforge.ingest import add_source
 
 log = logging.getLogger(__name__)
 
-PIECE_S = 120  # recorder piece length; one piece of overlap covers any clip (max_clip_s <= 120)
+PIECE_S = 30  # recorder piece length: a finished piece is what a chunk can include
+OVERLAP_S = 60  # repeated between chunks, so a moment on a boundary (live clips <= 25 s) is whole
 OFFLINE_GRACE_S = 600  # a stream that drops for less than this is the same session
 _CHANNEL = re.compile(r"^(?:https?://)?(?:www\.|m\.)?(kick\.com|twitch\.tv)/([A-Za-z0-9_]{2,40})/?$",
                       re.I)
@@ -280,7 +281,7 @@ def for_recorder(conn: sqlite3.Connection, host: str) -> dict:
     return {"sessions": [{"id": r["id"], "url": channel_url(r["channel"]), "dir": r["dir"],
                           "name": r["name"], "live": r["state"] == "live"} for r in rows],
             "purge": [r["dir"] for r in old], "piece_s": PIECE_S,
-            "chunk_s": s.live_chunk_min * 60, "overlap_s": PIECE_S,
+            "chunk_s": s.live_chunk_min * 60, "overlap_s": OVERLAP_S,
             "max_height": s.max_download_height}
 
 
@@ -313,6 +314,35 @@ def report(conn: sqlite3.Connection, session_id: int, body: dict) -> str | None:
     what = (f"{n['q']} chunk(s) sent for clipping" if n["q"]
             else f"{n['n']} chunk(s) recorded, not clipped (no live bounty)")
     return f"⚫ **{c['name']}**'s stream ended: {hours:.1f} h recorded, {what}."
+
+
+def stream_info(conn: sqlite3.Connection, source_id: int) -> dict | None:
+    """For a source cut from a live recording: the streamer (the campaign's name), the guests
+    Easton listed for that stream, and its title. None for ordinary footage."""
+    r = conn.execute(
+        """SELECT c.name streamer, ls.guests, ls.title FROM live_chunks k
+           JOIN live_sessions ls ON ls.id=k.session_id JOIN campaigns c ON c.id=ls.campaign_id
+           WHERE k.source_id=?""", (source_id,)).fetchone()
+    return dict(r) if r else None
+
+
+def guest_names(guests: str) -> list[str]:
+    """"Alabama Barker, Adrien Broner (AB)" -> ["Alabama Barker", "Adrien Broner (AB)"]."""
+    return [g.strip() for g in guests.replace("\n", ",").split(",") if g.strip()]
+
+
+def hashtags(streamer: str, guests: str, text: str) -> list[str]:
+    """The streamer's tag, plus a tag for each listed guest the hook or title names (by full
+    name or the nickname in brackets): "#n3on #alabamabarker"."""
+    slug = lambda n: "#" + re.sub(r"[^a-z0-9]", "", n.lower())  # noqa: E731
+    tags = [slug(streamer)]
+    low = text.lower()
+    for g in guest_names(guests):
+        name, _, nick = g.partition("(")
+        nick = nick.rstrip(")").strip()
+        if name.strip().lower() in low or (nick and re.search(rf"\b{re.escape(nick.lower())}\b", low)):
+            tags.append(slug(name.strip()))
+    return [t for t in dict.fromkeys(tags) if len(t) > 2]
 
 
 def sessions_for(conn: sqlite3.Connection, campaign_id: int, limit: int = 5) -> list[dict]:

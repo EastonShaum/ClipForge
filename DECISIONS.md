@@ -217,3 +217,11 @@ Easton asked whether ClipForge could post for him. The rule against automated po
 - The terms and privacy pages TikTok asks for are `/terms` and `/privacy`.
 - **Confirmed working 2026-10-29:** the sandbox app connected and clip 23 reached SEND_TO_USER_INBOX.
 
+## D33. Live streams: 5-minute chunks, 6–25 s clips, named people, full-screen crop (2026-10-29)
+Easton sent 5 TikToks of N3on's Halloween stream from the top clipper (@pradaclippedit, up to 1.8M views). Matched against our recording, our selector had missed all 4 of the moments it could place. Their clips were 6–18 s, posted 1–9 min after the moment, and named N3on and the guest in every hook. Ours were 15–60 s, up to 40 min late, and said "streamer" or "famous guy".
+- **Speed:** the recorder writes 30 s pieces and the Pi clips 5-minute chunks with 60 s of overlap (`live.PIECE_S`, `OVERLAP_S`, `CF_LIVE_CHUNK_MIN=5`). A clip is ready ~5–8 min after the moment. Selection costs ~$0.001 per chunk.
+- **Own prompt:** `prompts/live-*.md` is a separate pool from `select-*` (`active_versions(live=True)`), so the A/B split of ordinary prompts is untouched. It ranks the moment types that won (stream breaks, slips on live, confrontations, surprises), asks for 6–25 s (`CF_LIVE_MIN_CLIP_S`/`MAX`), allows an empty answer, and gives the winners' hooks as the style.
+- **Names:** each live session has a "who's on stream" field. The prompt gets `{streamer}` (the campaign name) and `{people}`; the caption gets `#n3on` plus a tag for each listed guest the hook names (`live.hashtags`).
+- **Layout:** live chunks render with `CF_LIVE_LAYOUT=crop`, full screen like the winners.
+- **Check:** a dry run of live-v1 on 5-minute windows of the old chunks found the 1.8M "END stream" moment (its window's top pick, 25 s) and the security moment (11 s); it still missed the flowers and the drunk guest. Worker protocol 5.
+

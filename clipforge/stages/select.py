@@ -72,13 +72,19 @@ def load_prompt(name: str) -> tuple[str, str]:
 
 
 def build_prompt(s: Settings, template: str, *, words: list[dict], title: str, category: str,
-                 feedback: str, rubric: str | None = None) -> str:
+                 feedback: str, rubric: str | None = None, live: dict | None = None) -> str:
+    """live: stream_info() for a live chunk; it switches to the live lengths and fills
+    {streamer} and {people} (the live prompt's extra variables)."""
+    guests = (live or {}).get("guests", "").strip()
     return template.format(
         category=category or "long-form",
         title=title.replace('"', "'"),
-        n=s.candidates_requested,
-        min_s=int(s.min_clip_s),
-        max_s=int(s.max_clip_s),
+        n=s.live_candidates_requested if live else s.candidates_requested,
+        min_s=int(s.live_min_clip_s if live else s.min_clip_s),
+        max_s=int(s.live_max_clip_s if live else s.max_clip_s),
+        streamer=(live or {}).get("streamer", ""),
+        people=(f"Guests at this stream: {guests}" if guests
+                else "Guests at this stream: none listed"),
         rubric=rubric or DEFAULT_RUBRIC,
         feedback=feedback or "(no feedback yet)",
         hook_types=", ".join(HOOK_TYPES),
@@ -86,8 +92,11 @@ def build_prompt(s: Settings, template: str, *, words: list[dict], title: str, c
     )
 
 
-def snap(c: Candidate, words: list[dict], s: Settings) -> tuple[int, int] | None:
+def snap(c: Candidate, words: list[dict], s: Settings, min_s: float | None = None,
+         max_s: float | None = None) -> tuple[int, int] | None:
     """Snap LLM times to real word boundaries and enforce length limits."""
+    min_s = s.min_clip_s if min_s is None else min_s
+    max_s = s.max_clip_s if max_s is None else max_s
     if not words:
         return None
     start_ms, end_ms = int(c.start * 1000), int(c.end * 1000)
@@ -98,7 +107,7 @@ def snap(c: Candidate, words: list[dict], s: Settings) -> tuple[int, int] | None
     s_ms = max(0, first["s"] - 150)
     e_ms = last["e"] + 350
     dur = (e_ms - s_ms) / 1000
-    if dur < s.min_clip_s * 0.8 or dur > s.max_clip_s * 1.15:
+    if dur < min_s * 0.8 or dur > max_s * 1.15:
         return None
     return s_ms, e_ms
 
@@ -187,7 +196,8 @@ def estimate_usd(s: Settings, prompt: str) -> float:
     return llm_cost(s.select_model, len(prompt) // 3, 5000)
 
 
-def select(s: Settings, prompt: str, words: list[dict]) -> tuple[list[dict], dict]:
+def select(s: Settings, prompt: str, words: list[dict], min_s: float | None = None,
+           max_s: float | None = None) -> tuple[list[dict], dict]:
     if s.select_provider == "fake":
         sel, meta = call_fake(s, words)
     elif s.select_provider == "claude_cli":
@@ -199,7 +209,7 @@ def select(s: Settings, prompt: str, words: list[dict]) -> tuple[list[dict], dic
 
     out, seen = [], []
     for c in sorted(sel.clips, key=lambda c: c.score, reverse=True):
-        snapped = snap(c, words, s)
+        snapped = snap(c, words, s, min_s, max_s)
         if not snapped:
             continue
         a, b = snapped

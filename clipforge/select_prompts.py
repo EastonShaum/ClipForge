@@ -1,5 +1,6 @@
-"""Prompt versioning: every prompt file in clipforge/prompts/select-*.md becomes an immutable
-version named <stem>-<sha6>. Editing a file creates a new version; old ones stay for analytics."""
+"""Prompt versioning: every prompt file in clipforge/prompts/select-*.md (ordinary footage) and
+live-*.md (live stream chunks, D33) becomes an immutable version named <stem>-<sha6>. Editing a
+file creates a new version; old ones stay for analytics."""
 
 import hashlib
 import sqlite3
@@ -9,7 +10,7 @@ from clipforge.stages.select import PROMPTS
 
 def sync_prompts(conn: sqlite3.Connection) -> list[str]:
     present = []
-    for f in sorted(PROMPTS.glob("select-*.md")):
+    for f in sorted([*PROMPTS.glob("select-*.md"), *PROMPTS.glob("live-*.md")]):
         body = f.read_text()
         sha = hashlib.sha256(body.encode()).hexdigest()
         name = f"{f.stem}-{sha[:6]}"
@@ -25,6 +26,7 @@ def sync_prompts(conn: sqlite3.Connection) -> list[str]:
     return present
 
 
-def active_versions(conn: sqlite3.Connection) -> list[dict]:
+def active_versions(conn: sqlite3.Connection, live: bool = False) -> list[dict]:
     return [dict(r) for r in conn.execute(
-        "SELECT id, name, body, weight FROM prompt_versions WHERE active=1 ORDER BY id")]
+        "SELECT id, name, body, weight FROM prompt_versions WHERE active=1 AND name LIKE ?"
+        " ORDER BY id", ("live-%" if live else "select-%",))]
