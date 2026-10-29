@@ -79,10 +79,8 @@ def build_context(conn: sqlite3.Connection, s: Settings, job: sqlite3.Row) -> di
     if kind == "render":
         cand = conn.execute("SELECT * FROM candidates WHERE id=?", (job["candidate_id"],)).fetchone()
         src = _source(conn, cand["source_id"])
-        words = [w for w in _words(conn, src["id"])
-                 if cand["start_ms"] - 1000 <= w["s"] <= cand["end_ms"] + 1000]
         return {"candidate_id": cand["id"], "source_id": src["id"],
-                "media_path": src["media_path"], "words": words,
+                "media_path": src["media_path"],
                 "start_ms": cand["start_ms"], "end_ms": cand["end_ms"],
                 "hook": cand["hook_text"], "out_rel": f"{src['id']}/c{cand['id']}.mp4",
                 "disclosure": src["disclosure"], "logo_rels": logo_list(src["logo_path"])}
@@ -123,10 +121,11 @@ def run_handler(s: Settings, kind: str, ctx: dict, out_dir: Path | None = None) 
             return {"candidates": cands, "meta": meta}
         if kind == "render":
             out = (out_dir or s.clips_dir) / ctx["out_rel"]
-            return render_stage.render(s, media_path=ctx["media_path"], words=ctx["words"],
+            return render_stage.render(s, media_path=ctx["media_path"],
                                        start_ms=ctx["start_ms"], end_ms=ctx["end_ms"],
                                        hook=ctx["hook"], out_path=out, work=work,
-                                       disclosure=_onscreen_disclosure(ctx.get("disclosure")),
+                                       disclosure=(_onscreen_disclosure(ctx.get("disclosure"))
+                                                   if s.onscreen_disclosure else ""),
                                        logo_paths=_logos(s, ctx.get("logo_rels", [])))
         if kind == "scout":
             bounties, meta = scout_stage.read_screenshot(s, s.assets_dir / ctx["image_rel"])
@@ -172,7 +171,7 @@ def apply_result(conn: sqlite3.Connection, s: Settings, job: sqlite3.Row, result
         if kind == "fetch":
             sid = job["source_id"]
             conn.execute(
-                "UPDATE sources SET media_host=?, media_path=?, title=COALESCE(NULLIF(?,''),title),"
+                "UPDATE sources SET media_host=?, media_path=?, title=COALESCE(NULLIF(title,''),?),"
                 " duration_s=?, status='fetched', error=NULL, updated_at=? WHERE id=?",
                 (host, result["media_path"], result.get("title", ""), result.get("duration_s"),
                  now, sid),

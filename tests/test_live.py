@@ -106,7 +106,7 @@ def test_live_bounty_records_clips_and_holds_until_rules(client, conn, settings,
     assert r.status_code == 200
     srcs = conn.execute("SELECT * FROM sources ORDER BY id").fetchall()
     assert len(srcs) == 2 and srcs[1]["skip_ms"] > 0 and srcs[0]["clips_wanted"] == 3
-    assert srcs[0]["title"] == "" and srcs[0]["bounty_id"] == b["id"]
+    assert srcs[0]["title"] == "x" and srcs[0]["bounty_id"] == b["id"]
 
     run_local(["fetch", "transcribe", "select", "render"], once=True, idle_s=0)
     assert conn.execute("SELECT COUNT(*) FROM clips").fetchone()[0] == 0  # held

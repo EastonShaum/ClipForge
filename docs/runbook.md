@@ -45,7 +45,7 @@ On a campaign card, open **Requirements** and upload screenshots of the brief (s
 
 ## Campaign logo (when the brief requires one)
 - **UI:** Campaigns → the campaign → choose a PNG → Add logo. Repeat for each required logo (Man On needs Man On + Playmaker). **CLI:** `cf campaign logo 1 ~/Downloads/logo.png` adds one.
-- Logos are burned in side by side, in the order added, on a dark strip under the captions of every clip rendered **after** the upload. Clips already rendered don't change.
+- Logos are burned in side by side, in the order added, on a dark strip under the hook card of every clip rendered **after** the upload. Clips already rendered don't change.
 - Don't add a logo to campaigns whose brief bans extra logos (GFuel does).
 
 ## Reminders
@@ -110,4 +110,4 @@ The Pi dashboard shows "Laptop worker: online".
 | Laptop shows offline | Is the worker window open? Can the laptop reach the Pi: `curl http://raspberrypi:8420/health`? Do the tokens match? |
 | Renders for a source never finish while the laptop is off | Its media lives on the laptop (Sources page shows "media on laptop"). Turn the laptop on, or Retry after deleting the source's jobs. |
 | "database busy" errors | Rare under WAL. Make sure no one else holds `sqlite3` open with a write transaction. |
-| Captions show the wrong font | `fc-scan assets/fonts/Montserrat-ExtraBold.ttf` should list "Montserrat ExtraBold"; `CF_FONT_NAME` must match. |
+| Hook card shows the wrong font, or emojis are missing | `fc-scan assets/fonts/Montserrat-ExtraBold.ttf` should list "Montserrat ExtraBold"; `CF_FONT_NAME` must match. Emojis need a color-emoji font: `fc-list | grep -i emoji` on the Pi (Noto Color Emoji), Segoe UI Emoji on Windows, or set `CF_EMOJI_FONT`. |

@@ -37,7 +37,7 @@
 2. **fetch:** yt-dlp downloads at ≤1080p into `data/raw/<sid>/`. It checks free disk and the raw-media cap first. It records `media_host` (pi or laptop), then queues `transcribe:<sid>` pinned to that host.
 3. **transcribe:** extracts 16 kHz mono Opus and sends 10-minute chunks to Groq. Word timestamps go into `transcripts`. The cost is logged. Queues `select:<sid>` pinned to the Pi.
 4. **select:** picks a prompt version (weighted A/B) and builds the prompt: rubric, feedback examples, compact transcript. Calls Claude and gets JSON back. Times are snapped to word boundaries, overlaps dropped, and the result stored in `candidates`. The top N (`CF_CANDIDATES_KEEP`) get `render:<cid>` jobs pinned to the media host.
-5. **render:** ffmpeg cuts the clip and builds the 9:16 blurfill frame with ASS captions (hook, word-by-word captions, disclosure tag), then loudnorm at −14 LUFS. Output goes to `data/clips/<sid>/c<cid>.mp4`. The caption text is built and the clip lands `in_review`. When the last render for a source finishes, Discord gets "N clips ready".
+5. **render:** ffmpeg cuts the clip and builds the 9:16 blurfill frame with the hook card overlaid for the whole clip (`stages/hookcard.py`, Pillow, color emojis; no word captions, D31) and logos under it, then loudnorm at −14 LUFS. Output goes to `data/clips/<sid>/c<cid>.mp4`. The caption text is built and the clip lands `in_review`. When the last render for a source finishes, Discord gets "N clips ready".
 6. **Review → post → views:** you approve or reject (with a reason), post by hand, paste the URL back, and enter views. All of it feeds the dashboard and the next prompt's feedback block.
 
 ## Code map

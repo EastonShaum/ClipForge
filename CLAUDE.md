@@ -6,7 +6,7 @@ A semi-automated clipping pipeline for paid view-based campaigns (Clipping.net, 
 - No Discord self-bots. Discord is a **webhook** for notifications only. Campaign ingest is manual or via RSS.
 - No automated posting to any social platform.
 - Only clip footage a campaign supplies or permits. Every source belongs to a campaign.
-- FTC disclosure on every clip: `#ad` first in the caption, plus an on-screen "Paid partnership #ad".
+- FTC disclosure on every clip: `#ad` first in the post caption, and the platform's paid-partnership toggle on every post. The burned-in "Paid partnership #ad" label is off by Easton's call (D31, `CF_ONSCREEN_DISCLOSURE`).
 - Gambling/casino campaigns blocked by default (`CF_BLOCKED_*`).
 - Secrets only in `.env` (gitignored). `.env.example` is the template.
 - Every paid API call is logged in `api_costs`. The monthly cap defers paid jobs.
@@ -39,9 +39,9 @@ systemctl --user status 'clipforge-*'
 - **Prompts** live in `clipforge/prompts/select-*.md`. Editing one creates a new version (content hash). Template vars: `{category} {title} {n} {min_s} {max_s} {rubric} {feedback} {hook_types} {transcript}`.
 - **Commits:** conventional (`feat:`, `fix:`, `docs:`, `chore:`), small.
 
-## Current status (2026-10-28)
-- Phases 0–7 are built, plus: in-place local footage pinned to the right machine (D20), laptop self-update (D21), Discord posting reminders (D22), several campaign logos as a row under the captions (D23, worker protocol 3), Scout, which ranks bounties from uploaded screenshots (D24), requirement screenshots read per campaign (D25), and one page per campaign with footage picked from the laptop's folders after a confirm step (D26), and campaigns that hold bounties, with folders `Campaigns/<campaign>/<bounty>` (D27), footage-ready pings, auto-queue and clips per video (D28), review/post/views as tabs inside each bounty (D29), and live streams: watch Kick/Twitch channels, record on the laptop (`recorder.py`), clip 30-min `.ffconcat` chunks, hold renders until the rules are in (D30). 86 tests pass.
-- Captions are one fixed line, split by measured pixel width (render.py `_GLYPH_W`).
+## Current status (2026-10-29)
+- Phases 0–7 are built, plus: in-place local footage pinned to the right machine (D20), laptop self-update (D21), Discord posting reminders (D22), several campaign logos as a row under the captions (D23), Scout, which ranks bounties from uploaded screenshots (D24), requirement screenshots read per campaign (D25), and one page per campaign with footage picked from the laptop's folders after a confirm step (D26), and campaigns that hold bounties, with folders `Campaigns/<campaign>/<bounty>` (D27), footage-ready pings, auto-queue and clips per video (D28), review/post/views as tabs inside each bounty (D29), and live streams: watch Kick/Twitch channels, record on the laptop (`recorder.py`), clip 30-min `.ffconcat` chunks, hold renders until the rules are in (D30), and a hook card with color emojis for the whole clip instead of burned-in captions (D31, worker protocol 4). 86 tests pass.
+- No burned-in captions (TikTok auto-captions). The hook is a Pillow-drawn card (`stages/hookcard.py`) shown for the whole clip.
 - Render benchmark on the Pi: 45 s clip in 54 s (blurfill), so the Pi renders by default (D6).
 - The services run on the Pi, and the UI is bound to the Tailscale IP 100.x.y.z:8420. The laptop worker (`eastons-laptop`) renders Man On.
 - First real run done: Man On ep-4 produced 6 clips for $0.03. Easton is reviewing and starts posting on 2026-10-28.

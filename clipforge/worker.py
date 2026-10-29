@@ -29,7 +29,7 @@ ALL_KINDS = ["fetch", "transcribe", "select", "render"]
 # older workers, so an outdated laptop can't quietly render clips without a required logo.
 # 2: campaign logos (ctx.logo_rel) and local-file sources.
 # 3: several logos per campaign (ctx.logo_rels), drawn as a row under the captions.
-WORKER_PROTOCOL = 3
+WORKER_PROTOCOL = 4  # 4: render context has no words; hook card needs Pillow (D31)
 LIBRARY_SCAN_S = 60
 _stop = False
 

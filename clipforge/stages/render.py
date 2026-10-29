@@ -1,8 +1,11 @@
-"""Render stage: cut, reframe to 9:16, burn word-by-word captions + hook, normalize loudness.
+"""Render stage: cut, reframe to 9:16, overlay the hook card + disclosure, normalize loudness.
 
-Caption placement follows platform safe zones on a 1080x1920 canvas: TikTok/Shorts/Reels UI
-covers roughly the top 10%, the bottom 25% and a ~120 px strip on the right. Captions sit just
-below center; the hook sits in the upper third.
+No word-by-word captions: TikTok and Shorts add their own auto-captions, and burned-in ones
+would sit on top of them. The hook card (hookcard.py, with color emojis) stays for the whole
+clip where the captions used to be, just below the picture; logos go under it.
+
+Placement follows platform safe zones on a 1080x1920 canvas: TikTok/Shorts/Reels UI covers
+roughly the top 10%, the bottom 25% and a ~120 px strip on the right.
 """
 
 import re
@@ -11,20 +14,21 @@ import time
 from pathlib import Path
 
 from clipforge.config import Settings
+from clipforge.stages.hookcard import make_card
 from clipforge.tools import ffmpeg
 
 W, H = 1080, 1920
-CAPTION_MARGIN_V = 640  # bottom-anchored: baseline ~1280 px, above TikTok's caption block
-HOOK_MARGIN_V = 300  # top-anchored
-HOOK_SECONDS = 3.0
-# Required brand logos: one row on a dark strip in the blurred band under the captions, centered
-# on the caption column. Not over the picture: footage often carries its own marks there (Man On's
+HOOK_MAX_W = 820  # px; clear of the frame edge and TikTok's right-hand buttons
+HOOK_X = 510  # center of the 100..920 band
+HOOK_BOTTOM = 1285  # card bottom edge; the logo strip starts just under it
+# Required brand logos: one row on a dark strip in the blurred band under the hook, centered
+# on the same column. Not over the picture: footage often carries its own marks there (Man On's
 # has a Playmaker wordmark top-right) and a logo on top would hide them. The strip keeps white
 # logos readable. Ends above TikTok's bottom UI (~y=1440).
 LOGO_H = 120
 LOGO_GAP = 40
 LOGO_PAD = (24, 12)  # strip padding x, y
-LOGO_Y = 1300  # strip top; caption baseline is at 1280, strip ends at ~1444
+LOGO_Y = 1300  # strip top; ends at ~1444
 
 
 def _ts(ms: int) -> str:
@@ -39,112 +43,30 @@ def _esc(text: str) -> str:
     return text.replace("\\", "").replace("{", "(").replace("}", ")").replace("\n", " ")
 
 
-# Montserrat ExtraBold advance widths per 100 px of font size (measured with Pillow). Used to
-# keep every caption on one line; anything unlisted counts as a wide letter.
-_GLYPH_W = dict(zip("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ',.?!-", (
-    79, 77, 73, 83, 67, 64, 77, 81, 34, 56, 75, 61, 95, 81, 85, 74, 85, 74, 65, 64, 79, 77, 118,
-    74, 69, 68, 68, 40, 60, 60, 70, 61, 65, 63, 67, 65, 29, 24, 28, 28, 60, 30, 39), strict=True))
-CAPTION_SIZE = 92
-ACTIVE_SCALE = 1.0  # colour-only highlight; enlarging the word shifted the whole line sideways
-CAPTION_MAX_W = 820  # px; clear of the frame edge and TikTok's right-hand buttons
-CAPTION_X = 510  # center of the 100..920 band
-
-
-def text_width(text: str, size: int = CAPTION_SIZE) -> float:
-    return sum(_GLYPH_W.get(ch, 85) for ch in text.upper()) * size / 100
-
-
-def _line_width(chunk: list[dict]) -> float:
-    words = [w["w"] for w in chunk]
-    # Worst case: the widest word is the active (enlarged) one.
-    return text_width(" ".join(words)) + max(text_width(w) for w in words) * (ACTIVE_SCALE - 1)
-
-
-def chunk_words(words: list[dict], n: int, gap_ms: int = 450,
-                max_w: float = CAPTION_MAX_W) -> list[list[dict]]:
-    """Group words into caption lines: at most n words, split at pauses and punctuation, and
-    never wider than max_w so a line can't wrap."""
-    chunks: list[list[dict]] = []
-    cur: list[dict] = []
-    for w in words:
-        if cur and (len(cur) >= n or w["s"] - cur[-1]["e"] > gap_ms
-                    or _line_width([*cur, w]) > max_w):
-            chunks.append(cur)
-            cur = []
-        cur.append(w)
-        if w["w"].endswith((".", "?", "!", ",")):
-            chunks.append(cur)
-            cur = []
-    if cur:
-        chunks.append(cur)
-    return chunks
-
-
-def build_ass(words: list[dict], clip_start_ms: int, clip_end_ms: int, hook: str,
-              font: str, words_per_chunk: int = 3, disclosure: str = "") -> str:
-    """ASS subtitle file: hook banner + karaoke-style captions with the active word highlighted,
-    plus an always-visible disclosure label (FTC wants it in the video, not only the caption)."""
-    rel = [{"w": w["w"], "s": w["s"] - clip_start_ms, "e": w["e"] - clip_start_ms}
-           for w in words if w["s"] >= clip_start_ms and w["e"] <= clip_end_ms + 200]
-    dur = clip_end_ms - clip_start_ms
-    out = [
+def build_ass(dur_ms: int, font: str, disclosure: str) -> str:
+    """ASS file with the always-visible disclosure label (FTC wants it in the video, not only
+    the post caption)."""
+    return "\n".join([
         "[Script Info]", "ScriptType: v4.00+", f"PlayResX: {W}", f"PlayResY: {H}",
         "WrapStyle: 0", "ScaledBorderAndShadow: yes", "",
         "[V4+ Styles]",
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, "
         "BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, "
         "BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-        # Captions: white, thick black outline, bottom-center anchored.
-        f"Style: Cap,{font},{CAPTION_SIZE},&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,"
-        "100,100,0,0,"
-        f"1,7,3,2,90,150,{CAPTION_MARGIN_V},1",
-        # Hook: black text on a white box, top-center anchored.
-        f"Style: Hook,{font},70,&H00111111,&H00111111,&H00FFFFFF,&H00FFFFFF,-1,0,0,0,100,100,0,0,"
-        f"3,18,0,8,110,150,{HOOK_MARGIN_V},1",
         # Disclosure: small, semi-opaque box, top-left inside the safe zone.
         f"Style: Disc,{font},40,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,"
         "3,8,0,7,60,0,200,1",
         "",
         "[Events]",
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
-    ]
-    if disclosure:
-        out.append(f"Dialogue: 2,{_ts(0)},{_ts(dur)},Disc,,0,0,0,,{_esc(disclosure)}")
-    if hook:
-        out.append(f"Dialogue: 1,{_ts(0)},{_ts(min(int(HOOK_SECONDS * 1000), dur))},Hook,,0,0,0,,"
-                   f"{_esc(hook.upper())}")
-    chunks = chunk_words(rel, words_per_chunk)
-    starts = [c[0]["s"] for c in chunks[1:]] + [dur + 1000]
-    for chunk, next_start in zip(chunks, starts, strict=True):
-        # Fixed anchor, no wrapping (\q2), shrink only a single word that is too wide alone.
-        fit = min(1.0, CAPTION_MAX_W / _line_width(chunk))
-        pos = (rf"{{\an2\pos({CAPTION_X},{H - CAPTION_MARGIN_V})\q2"
-               rf"\fscx{fit * 100:.0f}\fscy{fit * 100:.0f}}}")
-        big = f"{ACTIVE_SCALE * fit * 100:.0f}"
-        reset = rf"{{\r\fscx{fit * 100:.0f}\fscy{fit * 100:.0f}}}"  # \r drops the fit scale
-        for i, w in enumerate(chunk):
-            start = w["s"]
-            end = chunk[i + 1]["s"] if i + 1 < len(chunk) else w["e"] + 120
-            # Never overlap the next line: two events on screen at once is what made captions
-            # jump (libass stacks colliding lines) or double-draw at a fixed position.
-            end = min(max(end, start + 60), next_start)
-            if end <= start:
-                continue
-            parts = []
-            for j, other in enumerate(chunk):
-                t = _esc(other["w"].upper())
-                # Active word: yellow (ASS colours are &HBBGGRR).
-                parts.append(rf"{{\c&H00E6FF&\fscx{big}\fscy{big}}}" + t + reset
-                             if j == i else t)
-            out.append(f"Dialogue: 0,{_ts(start)},{_ts(end)},Cap,,0,0,0,,{pos}"
-                       + " ".join(parts))
-    return "\n".join(out) + "\n"
+        f"Dialogue: 2,{_ts(0)},{_ts(dur_ms)},Disc,,0,0,0,,{_esc(disclosure)}",
+    ]) + "\n"
 
 
-def filter_graph(layout: str, ass_path: Path, fonts_dir: Path, logos: int = 0) -> str:
-    """Video filter graph. Input 0 is the source; inputs 1..logos are logo PNGs.
-    Logos go under the subtitles so captions stay readable if they ever meet."""
-    subs = f"ass={_filter_path(ass_path)}:fontsdir={_filter_path(fonts_dir)}"
+def filter_graph(layout: str, ass_path: Path | None, fonts_dir: Path, logos: int = 0,
+                 hook: bool = False) -> str:
+    """Video filter graph. Input 0 is the source; inputs 1..logos are logo PNGs, then the hook
+    card PNG if there is one. Single-image inputs repeat their frame for the whole clip."""
     if layout == "crop":
         base = f"[0:v]scale=-2:{H},crop={W}:{H},setsar=1[base]"
     else:
@@ -157,18 +79,26 @@ def filter_graph(layout: str, ass_path: Path, fonts_dir: Path, logos: int = 0) -
             f"[b]scale={W}:-2[fg];"
             f"[bg][fg]overlay=(W-w)/2:(H-h)/2-120,setsar=1[base]"
         )
-    if not logos:
-        return f"{base};[base]{subs}[v]"
-    px, py = LOGO_PAD
-    parts = [f"[{i}:v]scale=-1:{LOGO_H},format=rgba,"
-             f"pad=iw+{LOGO_GAP}:ih:{LOGO_GAP // 2}:0:color=black@0[l{i}]"
-             for i in range(1, logos + 1)]
-    row = ("".join(f"[l{i}]" for i in range(1, logos + 1)) + f"hstack=inputs={logos}[row0]"
-           if logos > 1 else "[l1]null[row0]")
-    strip = (f"[row0]pad=iw+{2 * px - LOGO_GAP}:ih+{2 * py}:{px - LOGO_GAP // 2}:{py}:"
-             f"color=black@0.55,scale='min(iw,{CAPTION_MAX_W})':-1[row]")
-    return ";".join([base, *parts, row, strip,
-                     f"[base][row]overlay={CAPTION_X}-w/2:{LOGO_Y}:format=auto,{subs}[v]"])
+    graph, cur = [base], "[base]"
+    if logos:
+        px, py = LOGO_PAD
+        graph += [f"[{i}:v]scale=-1:{LOGO_H},format=rgba,"
+                  f"pad=iw+{LOGO_GAP}:ih:{LOGO_GAP // 2}:0:color=black@0[l{i}]"
+                  for i in range(1, logos + 1)]
+        graph.append("".join(f"[l{i}]" for i in range(1, logos + 1))
+                     + f"hstack=inputs={logos}[row0]" if logos > 1 else "[l1]null[row0]")
+        graph.append(f"[row0]pad=iw+{2 * px - LOGO_GAP}:ih+{2 * py}:{px - LOGO_GAP // 2}:{py}:"
+                     f"color=black@0.55,scale='min(iw,{HOOK_MAX_W})':-1[row]")
+        graph.append(f"{cur}[row]overlay={HOOK_X}-w/2:{LOGO_Y}:format=auto[logo]")
+        cur = "[logo]"
+    if hook:
+        graph.append(f"{cur}[{logos + 1}:v]overlay={HOOK_X}-w/2:{HOOK_BOTTOM}-h:format=auto[hook]")
+        cur = "[hook]"
+    if ass_path:  # the on-screen disclosure label
+        graph.append(f"{cur}ass={_filter_path(ass_path)}:fontsdir={_filter_path(fonts_dir)}[v]")
+    else:
+        graph.append(f"{cur}null[v]")
+    return ";".join(graph)
 
 
 def _filter_path(p: Path) -> str:
@@ -179,22 +109,27 @@ def _filter_path(p: Path) -> str:
     return re.sub(r"([\\'\[\],;])", r"\\\1", v)
 
 
-def render(s: Settings, *, media_path: str, words: list[dict], start_ms: int, end_ms: int,
-           hook: str, out_path: Path, work: Path, layout: str | None = None,
-           disclosure: str = "", logo_paths: list[str] | None = None) -> dict:
+def render(s: Settings, *, media_path: str, start_ms: int, end_ms: int, hook: str,
+           out_path: Path, work: Path, layout: str | None = None, disclosure: str = "",
+           logo_paths: list[str] | None = None) -> dict:
     work.mkdir(parents=True, exist_ok=True)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    ass = work / f"cap_{start_ms}_{end_ms}.ass"
-    ass.write_text(build_ass(words, start_ms, end_ms, hook, s.font_name,
-                             s.caption_words_per_chunk, disclosure), encoding="utf-8")
+    ass = None
+    if disclosure:
+        ass = work / f"disc_{start_ms}_{end_ms}.ass"
+        ass.write_text(build_ass(end_ms - start_ms, s.font_name, disclosure), encoding="utf-8")
+    card = work / f"hook_{start_ms}_{end_ms}.png"
+    has_card = make_card(hook, card, s.fonts_dir / "Montserrat-ExtraBold.ttf", HOOK_MAX_W,
+                         s.emoji_font) is not None
     tmp = out_path.with_suffix(".part.mp4")
     cmd = [
         ffmpeg(), "-y", "-v", "error",
         "-ss", f"{start_ms / 1000:.3f}", "-t", f"{(end_ms - start_ms) / 1000:.3f}",
         "-i", media_path,
         *[a for p in logo_paths or [] for a in ("-i", p)],
+        *(["-i", str(card)] if has_card else []),
         "-filter_complex", filter_graph(layout or s.render_layout, ass, s.fonts_dir,
-                                        logos=len(logo_paths or [])),
+                                        logos=len(logo_paths or []), hook=has_card),
         "-map", "[v]", "-map", "0:a:0?",
         "-af", "loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000",
         "-c:v", "libx264", "-preset", s.render_preset, "-crf", str(s.render_crf),

@@ -15,6 +15,7 @@ dependencies = [
     "httpx>=0.28",
     "typer>=0.15",
     "yt-dlp>=2025.10.22",
+    "pillow>=13.0.0",
 ]
 
 [project.scripts]

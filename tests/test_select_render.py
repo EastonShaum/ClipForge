@@ -4,7 +4,6 @@ import subprocess
 import pytest
 
 from clipforge.stages import render, select
-from clipforge.stages.transcribe import fake_transcript
 
 
 def words(n=200, step=330):
@@ -83,36 +82,19 @@ def test_build_prompt_fills_everything(settings):
     assert "gaming" in p and "LIKED" in p and "[0.0]" in p
 
 
-def test_ass_has_hook_disclosure_and_highlight():
-    w = fake_transcript(20)["words"]
-    ass = render.build_ass(w, 1000, 15000, "Watch this", "Montserrat ExtraBold", 3,
-                           "Paid partnership #ad")
-    assert "Hook,,0,0,0,,WATCH THIS" in ass
+def test_ass_holds_only_the_disclosure():
+    ass = render.build_ass(14000, "Montserrat ExtraBold", "Paid partnership #ad")
     assert "Disc,,0,0,0,,Paid partnership #ad" in ass
-    assert r"{\c&H00E6FF&" in ass
-    assert ass.count("Dialogue: 0,") > 5
+    assert ass.count("Dialogue:") == 1  # no word captions: TikTok/Shorts auto-caption
 
 
-def test_chunk_words_breaks_on_pause():
-    w = [{"w": "a", "s": 0, "e": 100}, {"w": "b", "s": 120, "e": 200},
-         {"w": "c", "s": 2000, "e": 2100}]
-    assert [len(c) for c in render.chunk_words(w, 3)] == [2, 1]
+def test_hook_card_keeps_emojis_with_their_words(tmp_path):
+    from clipforge.stages import hookcard
+    assert hookcard.runs("maze🎃👻") == [(False, "MAZE"), (True, "🎃👻")]
+    assert hookcard.is_emoji("😂") and not hookcard.is_emoji("A")
+    font = render.Path(__file__).parent.parent / "assets" / "fonts" / "Montserrat-ExtraBold.ttf"
+    size = hookcard.make_card("N3on gets jumpscared at a haunted maze 😱🎃", tmp_path / "c.png",
+                              font, render.HOOK_MAX_W)
+    assert size and size[0] <= render.HOOK_MAX_W and (tmp_path / "c.png").is_file()
+    assert hookcard.make_card("   ", tmp_path / "e.png", font, 820) is None
 
-
-def _times(line):
-    a, b = line.split(",")[1:3]
-    ms = [int(h) * 3600000 + int(m) * 60000 + round(float(s) * 1000)
-          for h, m, s in (t.split(":") for t in (a, b))]
-    return ms
-
-
-def test_captions_stay_on_one_line_and_never_overlap():
-    text = ["WHAT", "WE", "WANTED", "CONGRATULATIONS", "EXTRAORDINARILY", "MMM", "WWW", "ok"]
-    w = [{"w": t, "s": i * 300, "e": i * 300 + 250} for i, t in enumerate(text)]
-    for chunk in render.chunk_words(w, 3):
-        assert len(chunk) == 1 or render._line_width(chunk) <= render.CAPTION_MAX_W
-    ass = render.build_ass(w, 0, 3000, "", "Montserrat ExtraBold", 3)
-    caps = [ln for ln in ass.splitlines() if ln.startswith("Dialogue: 0,")]
-    assert all(r"\pos(" in ln and r"\q2" in ln for ln in caps)
-    spans = [_times(ln) for ln in caps]
-    assert all(end <= nxt for (_, end), (nxt, _) in zip(spans, spans[1:], strict=False))

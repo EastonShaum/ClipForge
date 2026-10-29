@@ -63,7 +63,10 @@ class Settings(BaseSettings):
     render_layout: str = "blurfill"  # blurfill | crop
     render_preset: str = "veryfast"
     render_crf: int = 21
-    caption_words_per_chunk: int = 3
+    # Burned-in "Paid partnership #ad" label. Off by Easton's call (2026-10-29): he turns on the
+    # platform's own paid-partnership toggle instead, and the post caption still starts with #ad.
+    onscreen_disclosure: bool = False
+    emoji_font: str = ""  # color-emoji font for the hook card; empty = find the system one
     font_name: str = "Montserrat ExtraBold"
     fonts_dir: Path = ROOT / "assets" / "fonts"
     # The laptop counts as online if it polled the Pi within this many seconds.

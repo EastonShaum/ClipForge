@@ -5,7 +5,7 @@ The transcript has one line per phrase: `[start_seconds] text`. Propose the {n} 
 ## Criteria (score each 0–10, multiply by weight; weights sum to 10, max total 100)
 1. HOOK STRENGTH (×2.5): does the first spoken line (first ~2 s) stop a scroller on its own? 10 = concrete, surprising, emotional or specific ("I lost $40,000 in one afternoon."); 5 = relevant but generic; 0 = filler, greeting, or a pronoun with no referent.
 2. PAYOFF (×2.0): a punchline, answer, reveal, result or quotable line lands before the end, and the clip ends within ~1 s after it. 0 = setup with no resolution.
-3. STANDALONE CLARITY (×1.5): a stranger with zero context can follow who, what, and why it matters (or it's fixable with ≤7 words of hook text).
+3. STANDALONE CLARITY (×1.5): a stranger with zero context can follow who, what, and why it matters (or it's fixable with the hook text, which can name the place, event or activity).
 4. EMOTIONAL INTENSITY (×1.5): one strong emotion — humor, shock, anger, awe, tension, inspiration.
 5. PACING (×1.0): no pauses over 1.5 s, no tangents, every sentence advances the arc.
 6. SHAREABILITY (×1.0): would someone send it to a friend or argue in the comments?
@@ -32,7 +32,7 @@ Gaming streams: favor clutch plays, fails, rage, chat-reaction moments and absur
 Return JSON only, matching the schema: an object with a "clips" array, best first. For each clip:
 - "start": seconds where the first word of the hook sentence begins (use the line timestamps)
 - "end": seconds where the last word of the payoff sentence ends
-- "hook_text": on-screen hook for the first 3 seconds, max 8 words, written to stop the scroll; it may paraphrase, and must not spoil the payoff
+- "hook_text": on-screen text shown for the whole clip, 6–12 words plus 2–3 emojis placed where they add feeling (e.g. "N3on gets jumpscared at a haunted maze 😱🎃"); written to stop the scroll; it may paraphrase and must not spoil the payoff. If the moment needs context a stranger lacks, name it from the transcript: the place, event or activity (e.g. "at Halloween Horror Nights", "in his first boxing match"). Never invent a place or event the transcript does not support. No hashtags
 - "hook_type": one of {hook_types}
 - "title": post title, max 70 characters
 - "rationale": one sentence: why it will perform, naming the payoff

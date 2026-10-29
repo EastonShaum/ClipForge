@@ -240,7 +240,7 @@ def queue_chunks(conn: sqlite3.Connection, session_id: int | None = None) -> int
     """Queue reported chunks of sessions that have an active live bounty. Idempotent."""
     s = get_settings()
     rows = conn.execute(
-        """SELECT k.id, k.path, k.overlap_ms, ls.campaign_id, ls.bounty_id, ls.host
+        """SELECT k.id, k.path, k.overlap_ms, ls.campaign_id, ls.bounty_id, ls.host, ls.title
            FROM live_chunks k JOIN live_sessions ls ON ls.id=k.session_id
            JOIN bounties b ON b.id=ls.bounty_id JOIN campaigns c ON c.id=ls.campaign_id
            WHERE k.source_id IS NULL AND b.status='active' AND b.live_clip=1
@@ -250,7 +250,10 @@ def queue_chunks(conn: sqlite3.Connection, session_id: int | None = None) -> int
         with tx(conn):
             sid, _ = add_source(conn, r["campaign_id"], r["path"], r["host"],
                                 bounty_id=r["bounty_id"], clips=s.live_clips_per_chunk)
-            conn.execute("UPDATE sources SET skip_ms=? WHERE id=?", (r["overlap_ms"], sid))
+            # The stream title ("N3on x Ryan Garcia Halloween Party") gives the selector the
+            # context a chunk's file name can't.
+            conn.execute("UPDATE sources SET skip_ms=?, title=? WHERE id=?",
+                         (r["overlap_ms"], r["title"] or "", sid))
             conn.execute("UPDATE live_chunks SET source_id=? WHERE id=?", (sid, r["id"]))
     return len(rows)
 

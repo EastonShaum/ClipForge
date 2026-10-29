@@ -19,7 +19,7 @@ The transcript below has one line per phrase in the form `[start_seconds] text`.
 Return JSON only, matching the schema: an object with a "clips" array. For each clip:
 - "start": start time in seconds (use the timestamp of the line where the clip should begin)
 - "end": end time in seconds (when the final word of the payoff is spoken)
-- "hook_text": the on-screen hook text for the first 2 seconds, max 8 words, written to stop the scroll (do not quote the transcript verbatim unless the quote itself is the hook)
+- "hook_text": on-screen text shown for the whole clip, 6–12 words plus 2–3 emojis placed where they add feeling (e.g. "N3on gets jumpscared at a haunted maze 😱🎃"); written to stop the scroll; it may paraphrase and must not spoil the payoff. If the moment needs context a stranger lacks, name it from the transcript: the place, event or activity (e.g. "at Halloween Horror Nights", "in his first boxing match"). Never invent a place or event the transcript does not support. No hashtags
 - "hook_type": one of {hook_types}
 - "title": a short post title, max 70 characters
 - "rationale": one sentence on why this will perform
