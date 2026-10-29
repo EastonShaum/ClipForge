@@ -18,6 +18,12 @@ catch (e) { document.documentElement.dataset.theme = 'dark'; }
   <a href="/dashboard" class="{{ 'on' if active == 'dashboard' }}">Dashboard</a>
   <button type="button" class="theme" onclick="toggleTheme()" aria-label="Switch light or dark theme">◐</button>
 </nav>
+<script>
+// The bounty tabs stick just under the nav; its height changes with font size and wrapping.
+(() => { const n = document.querySelector("nav"), set = () =>
+  document.documentElement.style.setProperty("--nav-h", n.offsetHeight + "px");
+  set(); addEventListener("resize", set); })();
+</script>
 <main>
   {% if msg %}<div class="msg" role="status">{{ msg }}</div>{% endif %}
   {% block content %}{% endblock %}
