@@ -30,7 +30,8 @@ ALL_KINDS = ["fetch", "transcribe", "select", "render"]
 # 2: campaign logos (ctx.logo_rel) and local-file sources.
 # 3: several logos per campaign (ctx.logo_rels), drawn as a row under the captions.
 # 4: render context has no words; hook card needs Pillow (D31).
-WORKER_PROTOCOL = 5  # 5: select carries min_s/max_s, render carries layout (D33)
+# 5: select carries min_s/max_s, render carries layout (D33).
+WORKER_PROTOCOL = 6  # 6: layout "auto": camera or shared screen, per clip (D34)
 LIBRARY_SCAN_S = 60
 _stop = False
 

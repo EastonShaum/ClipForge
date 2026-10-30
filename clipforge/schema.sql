@@ -240,7 +240,7 @@ CREATE TABLE IF NOT EXISTS bounties (
 
 -- One row per broadcast of a watched streamer (campaigns.live_channels). The Pi sees it go live;
 -- the laptop records it in pieces and reports .ffconcat chunks, which become sources of the
--- campaign's live bounty (bounties.live_clip). Watch-only campaigns are recorded, not clipped.
+-- stream's own bounty (bounties.live_session_id) until it is moved into a paid one (D34).
 CREATE TABLE IF NOT EXISTS live_sessions (
     id              INTEGER PRIMARY KEY,
     campaign_id     INTEGER NOT NULL REFERENCES campaigns(id),

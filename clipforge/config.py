@@ -35,7 +35,9 @@ class Settings(BaseSettings):
     live_candidates_requested: int = 4
     live_min_clip_s: float = 6.0
     live_max_clip_s: float = 25.0
-    live_layout: str = "crop"  # IRL footage fills the screen; blurred bars make people tiny
+    # auto: IRL camera footage fills the screen (blurred bars make people tiny); a shared
+    # screen keeps its full width (blurfill), since a center crop shows only its middle.
+    live_layout: str = "auto"  # auto | crop | blurfill
     max_download_height: int = 1080
 
     # Host identity: "pi" for the orchestrator, anything else for a remote worker.
@@ -110,7 +112,8 @@ class Settings(BaseSettings):
     )
     blocked_keywords: list[str] = Field(
         default_factory=lambda: ["stake", "casino", "roobet", "rollbit", "bet365", "draftkings",
-                                 "fanduel", "gamdom", "shuffle.com", "slots"]
+                                 "fanduel", "gamdom", "shuffle.com", "slots", "jack.com", "blackjack",
+                                 "roulette", "gambling"]
     )
 
     @property

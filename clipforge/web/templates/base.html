@@ -13,7 +13,9 @@ catch (e) { document.documentElement.dataset.theme = 'dark'; }
 </head>
 <body>
 <nav>
-  <a href="/campaigns" class="{{ 'on' if active in ('campaigns', 'campaign', 'bounty', 'queue', 'review', 'post', 'posted') }}">Campaigns</a>
+  {% set in_live = active == 'lives' or (b is defined and b and b.live_session_id) %}
+  <a href="/campaigns" class="{{ 'on' if not in_live and active in ('campaigns', 'campaign', 'bounty', 'queue', 'review', 'post', 'posted') }}">Campaigns</a>
+  <a href="/lives" class="{{ 'on' if in_live }}">Lives</a>
   <a href="/scout" class="{{ 'on' if active == 'scout' }}">Scout</a>
   <a href="/dashboard" class="{{ 'on' if active == 'dashboard' }}">Dashboard</a>
   <button type="button" class="theme" onclick="toggleTheme()" aria-label="Switch light or dark theme">◐</button>

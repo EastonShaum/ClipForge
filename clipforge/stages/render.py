@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 
 from clipforge.config import Settings
+from clipforge.stages import layout as live_layout
 from clipforge.stages.hookcard import make_card
 from clipforge.tools import ffmpeg, ffprobe
 
@@ -149,13 +150,14 @@ def render(s: Settings, *, media_path: str, start_ms: int, end_ms: int, hook: st
     has_card = make_card(hook, card, s.fonts_dir / "Montserrat-ExtraBold.ttf", HOOK_MAX_W,
                          s.emoji_font) is not None
     tmp = out_path.with_suffix(".part.mp4")
+    layout = live_layout.choose(layout or s.render_layout, media_path, start_ms, end_ms)
     cmd = [
         ffmpeg(), "-y", "-v", "error",
         "-ss", f"{start_ms / 1000:.3f}", "-t", f"{(end_ms - start_ms) / 1000:.3f}",
         "-i", media_path,
         *[a for p in logo_paths or [] for a in ("-i", p)],
         *(["-i", str(card)] if has_card else []),
-        "-filter_complex", filter_graph(layout or s.render_layout, ass, s.fonts_dir,
+        "-filter_complex", filter_graph(layout, ass, s.fonts_dir,
                                         logos=len(logo_paths or []), hook=has_card,
                                         src=probe_size(media_path)),
         "-map", "[v]", "-map", "0:a:0?",
@@ -172,4 +174,4 @@ def render(s: Settings, *, media_path: str, start_ms: int, end_ms: int, hook: st
         raise RuntimeError(f"ffmpeg exit {proc.returncode}: {proc.stderr.strip()[-800:]}")
     tmp.replace(out_path)  # atomic: a half-written file never looks finished
     return {"path": str(out_path), "size_bytes": out_path.stat().st_size,
-            "render_s": round(time.monotonic() - t0, 2)}
+            "render_s": round(time.monotonic() - t0, 2), "layout": layout}

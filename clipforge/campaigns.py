@@ -42,12 +42,16 @@ def effective_per_1k(rate_usd: float, rate_per_views: int) -> float:
 
 
 def blocked_reason(c: CampaignIn) -> str | None:
-    s = get_settings()
-    hay = " ".join([c.name, c.category, c.notes, c.source_links]).lower()
-    for cat in s.blocked_categories:
+    for cat in get_settings().blocked_categories:
         if cat.lower() in c.category.lower():
             return f"blocked category: {cat}"
-    for kw in s.blocked_keywords:
+    return blocked_text(" ".join([c.name, c.category, c.notes, c.source_links]))
+
+
+def blocked_text(text: str) -> str | None:
+    """The blocked keyword this text contains (a campaign, or a live stream's title), or None."""
+    hay = text.lower()
+    for kw in get_settings().blocked_keywords:
         # Word boundaries so "stake" doesn't block "mistake" or "stakeholder".
         if re.search(rf"\b{re.escape(kw.lower())}\b", hay):
             return f"blocked keyword: {kw}"

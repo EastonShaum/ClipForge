@@ -81,16 +81,24 @@ def test_live_bounty_records_clips_and_holds_until_rules(client, conn, settings,
                                         "category": "streamer", "rate_usd": "150",
                                         "rate_mode": "100000", "live_clip": "true",
                                         "live_channels": "https://kick.com/N3on"})
-    assert "live streams get clipped" in r.text and "Renders on hold" in r.text
+    assert "Move a stream into it from the Lives tab" in r.text and "Renders on hold" in r.text
     b = conn.execute("SELECT * FROM bounties").fetchone()
     assert b["live_clip"] == 1 and b["render_hold"] == 1
     assert hold_reasons(conn, b) == ["requirement screenshots"]
 
-    # Goes live: one session, a ping that says what's missing.
+    # Goes live: one session with its own bounty (D34), and a ping.
     msgs = live.check(conn, _probe({"kick.com/n3on": {"id": "77", "title": "Lizzo stream"}}))
-    assert len(msgs) == 1 and "N3on is live" in msgs[0] and "requirement screenshots" in msgs[0]
+    assert len(msgs) == 1 and "N3on is live" in msgs[0] and "/lives" in msgs[0]
     assert "laptop worker is offline" in msgs[0]
     assert live.check(conn, _probe({"kick.com/n3on": {"id": "77", "title": "x"}})) == []
+    own = conn.execute("SELECT * FROM bounties WHERE live_session_id IS NOT NULL").fetchone()
+    assert own["name"].startswith("live ") and own["media_folder"] is None
+    page = client.get("/lives").text
+    assert "Lizzo stream" not in page and "“x”" in page and "N3on · lizzo" in page
+    assert own["name"] not in client.get("/campaigns/1").text  # not under the campaign
+    # The bounty came up: move the stream into it. Its chunks go there from now on.
+    r = client.post("/lives/1/bounty", data={"bounty_id": str(b["id"])})
+    assert "to N3on · lizzo" in r.text
 
     # The recorder (here: the Pi itself, so the local worker can run the chunk) claims it.
     plan = client.get("/api/worker/live", headers=H, params={"host": "pi"}).json()
@@ -163,29 +171,63 @@ def test_live_bounty_records_clips_and_holds_until_rules(client, conn, settings,
                       params={"host": "pi"}).json()["sessions"] == []
 
 
-def test_watch_only_records_then_a_new_live_bounty_clips_it(client, conn):
-    client.post("/campaigns", data={"name": "Kai Cenat", "bounty_name": "main",
-                                    "category": "streamer", "rate_usd": "100",
-                                    "rate_mode": "100000"})
-    client.post("/campaigns/1/live", data={"watch_live": "true"})  # no channels: guess them
+def test_each_stream_has_its_own_clips_until_a_bounty_comes_up(client, conn):
+    r = client.post("/lives/watch", data={"name": "Kai Cenat"})  # no channels: guess them
+    assert "Watching Kai Cenat" in r.text
+    assert "Kai Cenat" not in client.get("/campaigns").text  # a streamer, not a campaign
     probe = _probe({"kick.com/kaicenat": None, "twitch.tv/kaicenat": {"id": "9", "title": "t"}})
     msgs = live.check(conn, probe)
     assert "Watching **Kai Cenat** on kick.com/kaicenat, twitch.tv/kaicenat" in msgs[0]
-    assert "only recorded" in msgs[1]
+    assert "Clipping every 5 min" in msgs[1]
     sess = live.for_recorder(conn, "eastons-laptop")["sessions"][0]
     live.report(conn, sess["id"], {"chunks": [{"path": "C:/Live/a.ffconcat", "overlap_ms": 0}],
                                    "recording": True})
-    assert conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0] == 0  # nobody pays yet
+    first = conn.execute("SELECT * FROM sources").fetchone()
+    own = conn.execute("SELECT id FROM bounties WHERE live_session_id=?",
+                       (sess["id"],)).fetchone()["id"]
+    assert first["url"] == "C:/Live/a.ffconcat" and first["bounty_id"] == own
+    job = conn.execute("SELECT affinity_host FROM jobs WHERE kind='fetch'").fetchone()
+    assert job["affinity_host"] == "eastons-laptop"  # the laptop has the recording
 
-    # A bounty opens and is added with "Add & clip live": the recording so far gets clipped.
+    # The next day's stream is a different stream: its own bounty, not yesterday's.
+    conn.execute("UPDATE live_sessions SET last_live_at='2020-01-01T00:00:00Z'")
+    live.check(conn, _probe({"kick.com/kaicenat": None, "twitch.tv/kaicenat": None}))
+    probe2 = _probe({"kick.com/kaicenat": None, "twitch.tv/kaicenat": {"id": "10", "title": "u"}})
+    live.check(conn, probe2)
+    s2 = conn.execute("SELECT * FROM live_sessions ORDER BY id DESC").fetchone()
+    assert s2["id"] != sess["id"] and s2["bounty_id"] not in (None, own)
+
+    # A bounty opens mid-stream, added with "Add & clip live": today's stream moves into it.
     client.post("/campaigns", data={"name": "Kai Cenat", "bounty_name": "stream-clips",
                                     "rate_usd": "100", "rate_mode": "100000",
                                     "live_clip": "true"})
-    live.check(conn, probe)
-    src = conn.execute("SELECT * FROM sources").fetchone()
-    assert src["url"] == "C:/Live/a.ffconcat" and src["bounty_id"] == 2
-    job = conn.execute("SELECT affinity_host FROM jobs WHERE kind='fetch'").fetchone()
-    assert job["affinity_host"] == "eastons-laptop"  # the laptop has the recording
+    paid = conn.execute("SELECT id FROM bounties WHERE name='stream-clips'").fetchone()["id"]
+    live.for_recorder(conn, "eastons-laptop")
+    live.report(conn, s2["id"], {"chunks": [{"path": "C:/Live/b.ffconcat", "overlap_ms": 0}],
+                                 "recording": True})
+    assert conn.execute("SELECT bounty_id FROM sources WHERE url='C:/Live/b.ffconcat'"
+                        ).fetchone()[0] == paid
+    assert conn.execute("SELECT bounty_id FROM sources WHERE id=?",
+                        (first["id"],)).fetchone()[0] == own  # yesterday's stays put
+    # And back to its own tabs.
+    assert "own tabs" in client.post(
+        f"/lives/{s2['id']}/bounty", data={"bounty_id": ""}).text
+    assert conn.execute("SELECT bounty_id FROM sources WHERE url='C:/Live/b.ffconcat'"
+                        ).fetchone()[0] == s2["bounty_id"]
+
+
+def test_a_gambling_stream_is_recorded_but_not_clipped(client, conn):
+    client.post("/lives/watch", data={"name": "N3on", "live_channels": "kick.com/n3on"})
+    msgs = live.check(conn, _probe({"kick.com/n3on": {"id": "1",
+                                                      "title": "JACK.COM 18+ GIVEAWAY IF WIN"}}))
+    assert "Not clipping" in msgs[0] and "jack.com" in msgs[0]
+    sess = live.for_recorder(conn, "eastons-laptop")["sessions"][0]
+    # Retitled mid-stream: still blocked.
+    live.check(conn, _probe({"kick.com/n3on": {"id": "1", "title": "just chatting"}}))
+    live.report(conn, sess["id"], {"chunks": [{"path": "C:/Live/a.ffconcat", "overlap_ms": 0}],
+                                   "recording": True})
+    assert conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0] == 0
+    assert "looks like gambling" in client.get("/lives").text
 
 
 def test_logo_rule_holds_until_a_logo_is_added(client, conn, monkeypatch):
@@ -214,3 +256,23 @@ def test_hashtags_name_the_streamer_and_the_guests_in_the_hook():
     assert live.hashtags("N3on", guests, "Alabama Barker brought FLOWERS") == [
         "#n3on", "#alabamabarker"]
     assert live.hashtags("N3on", guests, "a tab of absinthe") == ["#n3on"]  # "ab" inside a word
+
+
+def test_auto_layout_keeps_a_shared_screen_whole_and_crops_a_camera(tmp_path):
+    import random
+
+    from clipforge.stages import layout
+    rnd = random.Random(1)
+    camera = bytes(rnd.randrange(40, 200) for _ in range(layout.W * layout.H))
+    screen = bytes([54] * (layout.W * layout.H // 2)) + camera[: layout.W * layout.H // 2]
+    assert layout.flat_share(camera) < 0.01 and layout.flat_share(screen) > 0.45
+    black = bytes(layout.W * layout.H)  # letterbox bars don't count
+    assert layout.flat_share(black) == 0
+    assert layout.choose("crop", "nope.mp4", 0, 1000) == "crop"
+    for name, src in (("screen", "color=c=0x36393f:s=640x360:d=2,drawbox=x=0:y=0:w=120:h=360"
+                                  ":color=0x202225:t=fill"),
+                      ("camera", "nullsrc=s=640x360:d=2,geq=lum='random(1)*255':cb=128:cr=128")):
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", src,
+                        str(tmp_path / f"{name}.mp4")], check=True)
+    assert layout.choose("auto", str(tmp_path / "screen.mp4"), 0, 2000) == "blurfill"
+    assert layout.choose("auto", str(tmp_path / "camera.mp4"), 0, 2000) == "crop"

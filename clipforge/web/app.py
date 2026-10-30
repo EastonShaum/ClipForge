@@ -30,7 +30,14 @@ from clipforge import (
     scout,
     tiktok,
 )
-from clipforge.bounties import BountyIn, add_bounty, clip_counts, get_bounty, list_bounties
+from clipforge.bounties import (
+    BountyIn,
+    add_bounty,
+    clip_counts,
+    get_bounty,
+    label,
+    list_bounties,
+)
 from clipforge.campaigns import (
     CampaignIn,
     add_campaign,
@@ -152,11 +159,59 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
     # The commit this process loaded. Remote workers must run exactly this (see update.py).
     code_version = repo_version() if s.require_worker_version else None
 
+    # Live streams (D34): their own tab, apart from campaigns. Each stream's clips have their
+    # own Review / Post / Posted tabs until Easton moves the stream into a paid bounty.
+    @app.get("/lives")
+    def lives(request: Request, conn: DB, msg: str = ""):
+        streamers = []
+        for c in live.watched(conn) + [r for r in conn.execute(
+                "SELECT * FROM campaigns WHERE status='active' AND watch_live=0"
+                " AND live_channels!='' ORDER BY id")]:
+            streamers.append({**dict(c), "channels": [
+                (ch, live.channel_url(ch), live.channel_status(conn, ch))
+                for ch in live.parse_channels(c["live_channels"])[0]]})
+        return page(request, "lives.html", streamers=streamers, sessions=live.sessions(conn),
+                    paid=bounties.paid_bounties(conn), live_dir=s.live_dir.name, msg=msg,
+                    every=s.live_check_s // 60)
+
+    @app.post("/lives/watch")
+    def lives_watch(conn: DB, name: str = Form(...), live_channels: str = Form("")):
+        chans, bad = live.parse_channels(live_channels)
+        if bad:
+            return back("/lives", f"Not a Kick or Twitch channel: {' '.join(bad)}"
+                        " (use e.g. kick.com/n3on)")
+        name = " ".join(name.split())
+        row = conn.execute("SELECT id FROM campaigns WHERE lower(name)=lower(?)",
+                           (name,)).fetchone()
+        try:
+            with tx(conn):
+                cid = row["id"] if row else add_campaign(conn, CampaignIn(name=name))
+                conn.execute("UPDATE campaigns SET watch_live=1, live_channels=CASE WHEN ?=''"
+                             " THEN live_channels ELSE ? END WHERE id=?",
+                             (" ".join(chans), " ".join(chans), cid))
+        except ValueError as e:
+            return back("/lives", str(e).split("\n")[0][:200])
+        return back("/lives", f"Watching {name}. Channels are checked every"
+                    f" {s.live_check_s // 60} min.")
+
+    @app.post("/lives/{session_id}/bounty")
+    def lives_bounty(session_id: int, conn: DB, bounty_id: str = Form("")):
+        try:
+            with tx(conn):
+                n = live.move_to(conn, session_id, int(bounty_id) if bounty_id else None)
+        except (TypeError, ValueError) as e:
+            return back("/lives", str(e))
+        b = get_bounty(conn, conn.execute("SELECT bounty_id FROM live_sessions WHERE id=?",
+                                          (session_id,)).fetchone()["bounty_id"])
+        return back("/lives", f"Moved {n} clip(s) to {label(b['campaign'], b['name'])}."
+                    " New clips from this stream go there too." if bounty_id else
+                    f"Moved {n} clip(s) back to the stream's own tabs.")
+
     @app.post("/live/{session_id}/guests")
     def live_guests(session_id: int, conn: DB, guests: str = Form(""), next: str = Form("")):
         conn.execute("UPDATE live_sessions SET guests=? WHERE id=?",
                      (" ".join(guests.split())[:500], session_id))
-        return back(_next(next, "/campaigns"), "Saved. The next chunks use these names.")
+        return back(_next(next, "/lives"), "Saved. The next chunks use these names.")
 
     # TikTok inbox drafts (D32). Connect once; each upload is one tap, and Easton posts it.
     @app.get("/auth/tiktok")
@@ -391,6 +446,8 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         camps = list_campaigns(conn)
         for c in camps:
             c["bounties"] = list_bounties(conn, c["id"])
+        # A streamer added on the Lives tab, with no paid bounty, lives there only.
+        camps = [c for c in camps if c["bounties"] or not (c["watch_live"] or c["live_channels"])]
         return page(request, "campaigns.html", campaigns=camps, msg=msg, prefill=prefill)
 
     @app.post("/campaigns")
@@ -423,24 +480,26 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
                                  " ?='' THEN live_channels ELSE ? END WHERE id=?",
                                  (form["live_channels"], form["live_channels"], cid))
                 bid = add_bounty(conn, cid, BountyIn(**bounty))
+                # "Add & clip live" while they're live: this stream's clips go to the bounty.
+                now_live = conn.execute("SELECT id FROM live_sessions WHERE campaign_id=? AND"
+                                        " state='live' AND blocked IS NULL", (cid,)).fetchone()
+                if clip_live and now_live:
+                    live.move_to(conn, now_live["id"], bid)
         except (ValueError, TypeError) as e:
             return back("/campaigns", str(e).split("\n")[0][:200])
         msg = (f"Bounty {bounty['name']} added" if existing else f"Campaign #{cid} added")
         if clip_live:
             return back(f"/campaigns/{cid}/bounties/{bid}",
-                        f"{msg}. Its live streams get clipped; clips render once you add the"
-                        " requirement screenshots below.")
+                        f"{msg}. " + ("Today's stream is in it now; clips" if now_live else
+                                      "Move a stream into it from the Lives tab. Clips")
+                        + " render once you add the requirement screenshots below.")
         return back(f"/campaigns/{cid}", msg)
 
     @app.get("/campaigns/{cid}")
     def campaign_page(request: Request, cid: int, conn: DB, msg: str = ""):
         c = _camp_or_404(conn, cid)
-        chans = live.parse_channels(c["live_channels"])[0]
         return page(request, "campaign.html", c=c, bounties=list_bounties(conn, cid), msg=msg,
                     library_dir=s.media_library_dir.name,
-                    channels=[(ch, live.channel_url(ch), live.channel_status(conn, ch))
-                              for ch in chans],
-                    sessions=live.sessions_for(conn, cid), live_dir=s.live_dir.name,
                     counts=conn.execute(
                         "SELECT COUNT(DISTINCT s.id) sources, COUNT(k.id) clips FROM sources s"
                         " LEFT JOIN candidates ca ON ca.source_id=s.id LEFT JOIN clips k ON"
@@ -521,7 +580,7 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
                     busy=busy, library_dir=s.media_library_dir.name, msg=msg,
                     tabs=clip_counts(conn, bid), holds=bounties.hold_reasons(conn, b),
                     held=bounties.held_count(conn, bid),
-                    sessions=live.sessions_for(conn, cid) if b["live_clip"] else [])
+                    sessions=live.sessions(conn, bounty_id=bid))
 
     @app.post("/campaigns/{cid}/bounties/{bid}/settings")
     def bounty_settings(cid: int, bid: int, conn: DB, rate_usd: float = Form(0),
@@ -557,11 +616,11 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         _camp_or_404(conn, cid)
         chans, bad = live.parse_channels(live_channels)
         if bad:
-            return back(f"/campaigns/{cid}#live", f"Not a Kick or Twitch channel:"
+            return back("/lives", f"Not a Kick or Twitch channel:"
                         f" {' '.join(bad)} (use e.g. kick.com/n3on)")
         conn.execute("UPDATE campaigns SET live_channels=?, watch_live=? WHERE id=?",
                      (" ".join(chans), int(watch_live), cid))
-        return back(f"/campaigns/{cid}#live", "Saved. Channels are checked every"
+        return back("/lives", "Saved. Channels are checked every"
                     f" {s.live_check_s // 60} min.")
 
     @app.post("/campaigns/{cid}/bounties/{bid}/status")

@@ -80,18 +80,28 @@ def list_bounties(conn: sqlite3.Connection, campaign_id: int) -> list[dict]:
                   (SELECT COUNT(*) FROM clips k JOIN candidates ca ON ca.id=k.candidate_id
                    JOIN sources s ON s.id=ca.source_id WHERE s.bounty_id=b.id) clips,
                   {CLIP_COUNTS}
-           FROM bounties b JOIN campaigns c ON c.id=b.campaign_id WHERE b.campaign_id=?
+           FROM bounties b JOIN campaigns c ON c.id=b.campaign_id
+           WHERE b.campaign_id=? AND b.live_session_id IS NULL
            ORDER BY b.status='ended', b.id""", (campaign_id,)).fetchall()
     return [_with_rate(r) for r in rows]
 
 
 def default_bounty(conn: sqlite3.Connection, campaign_id: int) -> int:
-    """Where footage goes when no bounty is named: the campaign's only (or first active) one."""
-    r = conn.execute("SELECT id FROM bounties WHERE campaign_id=? ORDER BY status!='active', id"
-                     " LIMIT 1", (campaign_id,)).fetchone()
+    """Where footage goes when no bounty is named: the campaign's only (or first active) one.
+    Never a live stream's own bounty (live.own_bounty)."""
+    r = conn.execute("SELECT id FROM bounties WHERE campaign_id=? AND live_session_id IS NULL"
+                     " ORDER BY status!='active', id LIMIT 1", (campaign_id,)).fetchone()
     if not r:
         raise ValueError("This campaign has no bounties yet. Add one first.")
     return r["id"]
+
+
+def paid_bounties(conn: sqlite3.Connection) -> list[dict]:
+    """Active bounties a live stream can be moved into, labeled "N3on · halloween"."""
+    return [{**dict(r), "label": label(r["campaign"], r["name"])} for r in conn.execute(
+        "SELECT b.id, b.name, b.campaign_id, c.name campaign FROM bounties b JOIN campaigns c"
+        " ON c.id=b.campaign_id WHERE b.status='active' AND c.status='active'"
+        " AND b.live_session_id IS NULL ORDER BY c.name, b.id")]
 
 
 def label(campaign: str, bounty: str | None) -> str:

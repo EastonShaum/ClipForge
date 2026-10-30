@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Lives · ClipForge{% endblock %}
+{% block content %}
+<h1>Lives</h1>
+<div class="small muted">ClipForge checks these channels every {{ every }} min. When a streamer goes live you get a Discord ping, the laptop records the stream to {{ live_dir }}, and it's clipped every few minutes. Each stream keeps its own clips; if a bounty comes up, move the stream into it.</div>
+
+<h2>Streams</h2>
+{% for ls in sessions %}
+{% set base = "/campaigns/" ~ ls.bounty_cid ~ "/bounties/" ~ ls.bounty_id %}
+<section class="card" id="live{{ ls.id }}">
+  <div class="row">
+    {% if ls.state == 'live' %}<span class="chip live">● live</span>{% else %}<span class="chip">ended</span>{% endif %}
+    <strong>{{ ls.streamer }}</strong>
+    <span class="small">{{ ls.started_at[5:16].replace('T', ' ') }} UTC{% if ls.title %} · “{{ ls.title[:70] }}”{% endif %}</span>
+  </div>
+  <div class="small muted">{{ ls.channel }} · {{ ls.recorded_s|hm }} recorded{% if ls.bytes %} ({{ "%.1f"|format(ls.bytes / 1e9) }} GB){% endif %} · {{ ls.chunks }} chunk(s){% if ls.queued %}, {{ ls.queued }} clipped{% endif %}
+    {% if ls.state == 'live' and not ls.host %} · <span class="status-failed">not recording: laptop worker offline</span>
+    {% elif ls.state == 'live' and ls.rec_error and not ls.recording %} · <span class="status-failed">{{ ls.rec_error[:120] }}</span>{% endif %}
+    {% if ls.purged_at %} · recording deleted{% endif %}</div>
+  {% if ls.blocked %}
+  <div class="small status-failed">🚫 Not clipped: the title looks like gambling ({{ ls.blocked }}).</div>
+  {% else %}
+  <div class="row">
+    <a class="btn small" href="{{ base }}/review">Review{% if ls.in_review %} <span class="count">{{ ls.in_review }}</span>{% endif %}</a>
+    <a class="btn small" href="{{ base }}/post">Post{% if ls.approved %} <span class="count">{{ ls.approved }}</span>{% endif %}</a>
+    <a class="btn small" href="{{ base }}/posted">Posted{% if ls.posted %} <span class="count">{{ ls.posted }}</span>{% endif %}</a>
+    {% if not ls.own %}<span class="small">In bounty <a href="{{ base }}">{{ ls.bounty_campaign }} · {{ ls.bounty }}</a></span>{% endif %}
+  </div>
+  <form method="post" action="/lives/{{ ls.id }}/bounty" class="row small">
+    <select name="bounty_id" style="flex:1">
+      <option value="">Its own tabs (no bounty)</option>
+      {% for b in paid %}<option value="{{ b.id }}" {{ 'selected' if b.id == ls.bounty_id }}>{{ b.label }}</option>{% endfor %}
+    </select>
+    <button class="small">{{ 'Move' if ls.own else 'Change' }}</button>
+  </form>
+  {% if not ls.purged_at %}
+  <form method="post" action="/live/{{ ls.id }}/guests" class="row small">
+    <input type="hidden" name="next" value="/lives#live{{ ls.id }}">
+    <label style="flex:1">Who's on stream (names go in hooks and hashtags)
+      <input name="guests" value="{{ ls.guests }}" placeholder="Alabama Barker, Yera, Adrien Broner (AB)"></label>
+    <button class="small">Save</button>
+  </form>
+  {% endif %}
+  {% endif %}
+</section>
+{% else %}
+<div class="small muted">No streams recorded yet.</div>
+{% endfor %}
+
+<h2>Streamers</h2>
+{% for c in streamers %}
+<section class="card">
+  <strong>{{ c.name }}</strong>
+  {% for ch, url, st in c.channels %}
+  <div class="row small"><a href="{{ url }}" target="_blank" rel="noopener">{{ ch }}</a>
+    {% if st %}<span class="{{ 'chip live' if st.state == 'live' else 'status-failed' if st.state not in ('offline',) else 'muted' }}">{{ st.state }}</span><span class="muted">checked {{ st.at[11:16] }} UTC</span>{% else %}<span class="muted">not checked yet</span>{% endif %}</div>
+  {% endfor %}
+  <form method="post" action="/campaigns/{{ c.id }}/live" class="grid2">
+    <label>Kick / Twitch channels <input name="live_channels" value="{{ c.live_channels }}" placeholder="kick.com/n3on twitch.tv/n3on"></label>
+    <label><input type="checkbox" name="watch_live" value="true" {{ 'checked' if c.watch_live }} style="width:auto">
+      Watch: ping me, record and clip when they go live</label>
+    <button class="go small">Save</button>
+  </form>
+</section>
+{% endfor %}
+<section class="card">
+  <h2>Watch a streamer</h2>
+  <form method="post" action="/lives/watch" class="grid2">
+    <label>Name <input name="name" required placeholder="N3on"></label>
+    <label>Kick / Twitch channels <input name="live_channels" placeholder="kick.com/n3on (empty: found by name)"></label>
+    <button class="go small">Watch</button>
+  </form>
+</section>
+{% endblock %}

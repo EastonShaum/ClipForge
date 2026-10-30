@@ -5,9 +5,13 @@ The Pi checks who is live (scheduler, every live_check_s) and keeps one live_ses
 broadcast. The laptop's recorder (clipforge/recorder.py) asks which sessions to record, saves
 the stream as 30-second pieces under live_dir, and lists them in 5-minute .ffconcat chunks that
 overlap by a minute (D33), so a moment on a boundary is whole in one of them. Each chunk it reports
-becomes a source of the campaign's live bounty and runs through the normal pipeline; the
-overlap is skipped when keeping candidates (sources.skip_ms). Watch-only campaigns are recorded
-so the footage is ready, but nothing is clipped (or paid for) until a live bounty exists."""
+becomes a source and runs through the normal pipeline; the overlap is skipped when keeping
+candidates (sources.skip_ms).
+
+Each stream is its own thing (D34): it gets its own bounty row (bounties.live_session_id, shown on
+the Lives tab, not under the campaign), so today's clips never land with yesterday's. When a
+paid bounty comes up, Easton moves the stream into it (move_to). A stream whose title names a
+gambling site or game is recorded but never clipped (blocked)."""
 
 import json
 import logging
@@ -18,8 +22,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from clipforge import jobqueue
-from clipforge.bounties import hold_reasons, label
-from clipforge.campaigns import folder_name
+from clipforge.campaigns import blocked_text, folder_name
 from clipforge.config import get_settings
 from clipforge.db import tx, utc_in, utcnow
 from clipforge.ingest import add_source
@@ -101,11 +104,6 @@ def channel_status(conn: sqlite3.Connection, channel: str) -> dict | None:
     return json.loads(r["value"]) if r else None
 
 
-def live_bounty(conn: sqlite3.Connection, campaign_id: int) -> sqlite3.Row | None:
-    return conn.execute("SELECT * FROM bounties WHERE campaign_id=? AND live_clip=1 AND"
-                        " status='active' ORDER BY id DESC LIMIT 1", (campaign_id,)).fetchone()
-
-
 def watched(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     """Active campaigns to check: watching is on, or a bounty clips their live streams."""
     return conn.execute(
@@ -160,7 +158,6 @@ def check(conn: sqlite3.Connection, probe_fn: Callable = probe) -> list[str]:
                     msgs.append(msg)
                 break  # multistreaming to Kick and Twitch: record one of them
     _end_quiet(conn)
-    attach(conn)
     queue_chunks(conn)
     return msgs
 
@@ -168,14 +165,17 @@ def check(conn: sqlite3.Connection, probe_fn: Callable = probe) -> list[str]:
 def _seen_live(conn: sqlite3.Connection, c: sqlite3.Row, channel: str, info: dict) -> str | None:
     now = utcnow()
     key = f"{channel}:{info['id']}"
+    # Blocked sticks: a stream that names a casino once stays unclipped even if retitled.
+    blocked = blocked_text(info["title"])
     cur = conn.execute("UPDATE live_sessions SET last_live_at=?, state='live', ended_at=NULL,"
-                       " title=? WHERE stream_key=?", (now, info["title"], key))
+                       " title=?, blocked=COALESCE(blocked, ?) WHERE stream_key=?",
+                       (now, info["title"], blocked, key))
     if cur.rowcount:
         return None
     # A stream that dropped and restarted gets a new id: same session, same recording.
-    cur = conn.execute("UPDATE live_sessions SET stream_key=?, last_live_at=?, title=?"
-                       " WHERE campaign_id=? AND channel=? AND state='live'",
-                       (key, now, info["title"], c["id"], channel))
+    cur = conn.execute("UPDATE live_sessions SET stream_key=?, last_live_at=?, title=?,"
+                       " blocked=COALESCE(blocked, ?) WHERE campaign_id=? AND channel=?"
+                       " AND state='live'", (key, now, info["title"], blocked, c["id"], channel))
     if cur.rowcount:
         return None
     if conn.execute("SELECT 1 FROM live_sessions WHERE campaign_id=? AND state='live'",
@@ -184,36 +184,53 @@ def _seen_live(conn: sqlite3.Connection, c: sqlite3.Row, channel: str, info: dic
     s = get_settings()
     local = datetime.now(ZoneInfo(s.timezone))
     slug = channel.replace(".com", "").replace(".tv", "").replace("/", "-")
-    b = live_bounty(conn, c["id"])
-    conn.execute(
-        """INSERT INTO live_sessions (campaign_id, bounty_id, channel, stream_key, title, dir,
-               name, started_at, last_live_at) VALUES (?,?,?,?,?,?,?,?,?)""",
-        (c["id"], b["id"] if b else None, channel, key, info["title"],
+    sid = conn.execute(
+        """INSERT INTO live_sessions (campaign_id, channel, stream_key, title, dir, name,
+               started_at, last_live_at, blocked) VALUES (?,?,?,?,?,?,?,?,?)""",
+        (c["id"], channel, key, info["title"],
          f"{folder_name(c['name'])}/{slug} {local:%Y-%m-%d %H%M}",
-         f"{folder_name(c['name'])} live {local:%m-%d}", now, now))
-    return start_message(conn, c, b, channel, info["title"])
+         f"{folder_name(c['name'])} live {local:%m-%d}", now, now, blocked)).lastrowid
+    own_bounty(conn, sid)
+    return start_message(conn, c, sid, channel, info["title"])
 
 
-def start_message(conn: sqlite3.Connection, c: sqlite3.Row, b: sqlite3.Row | None,
+def own_bounty(conn: sqlite3.Connection, session_id: int) -> int:
+    """The stream's own bounty row: where its clips go until it's moved into a paid bounty.
+    Named "live 10-29" (a second stream that day: "live 10-29 2"). Idempotent."""
+    sess = conn.execute("SELECT * FROM live_sessions WHERE id=?", (session_id,)).fetchone()
+    row = conn.execute("SELECT id FROM bounties WHERE live_session_id=?", (session_id,)).fetchone()
+    if row:
+        bid = row["id"]
+    else:
+        base = "live " + sess["name"].rsplit(" ", 1)[-1]
+        name, n = base, 1
+        while conn.execute("SELECT 1 FROM bounties WHERE campaign_id=? AND lower(name)=lower(?)",
+                           (sess["campaign_id"], name)).fetchone():
+            n += 1
+            name = f"{base} {n}"
+        bid = conn.execute("INSERT INTO bounties (campaign_id, name, notes, live_session_id)"
+                           " VALUES (?,?,?,?)",
+                           (sess["campaign_id"], name, sess["title"], session_id)).lastrowid
+    conn.execute("UPDATE live_sessions SET bounty_id=? WHERE id=? AND bounty_id IS NULL",
+                 (bid, session_id))
+    return bid
+
+
+def start_message(conn: sqlite3.Connection, c: sqlite3.Row, session_id: int,
                   channel: str, title: str) -> str:
     s = get_settings()
-    base = s.public_base_url
+    sess = conn.execute("SELECT * FROM live_sessions WHERE id=?", (session_id,)).fetchone()
     lines = [f"🔴 **{c['name']} is live** on {channel_url(channel)}"
              + (f": “{title}”" if title else "")]
     if jobqueue.remote_worker_alive(conn, s.host_name, s.laptop_grace_s):
         lines.append("Recording on the laptop.")
     else:
         lines.append("⚠️ The laptop worker is offline, so nothing is recording. Start it now.")
-    if b:
-        lines.append(f"Clipping into **{label(c['name'], b['name'])}** every "
-                     f"{s.live_chunk_min} min.")
-        missing = hold_reasons(conn, b)
-        if missing:
-            lines.append(f"Clips wait to render until you add: {', '.join(missing)} → "
-                         f"{base}/campaigns/{c['id']}/bounties/{b['id']}#rules")
+    if sess["blocked"]:
+        lines.append(f"🚫 Not clipping: the title looks like gambling ({sess['blocked']}).")
     else:
-        lines.append(f"No live bounty yet, so it's only recorded (ready if a bounty opens). "
-                     f"Add one from Scout with “Add & clip live”: {base}/scout")
+        lines.append(f"Clipping every {s.live_chunk_min} min. Clips land on the Lives tab; move "
+                     f"the stream into a bounty there if one comes up: {s.public_base_url}/lives")
     return "\n".join(lines)
 
 
@@ -226,25 +243,40 @@ def _end_quiet(conn: sqlite3.Connection) -> None:
                  " WHERE state='live' AND last_live_at < ?", (now, utc_in(-OFFLINE_GRACE_S)))
 
 
-def attach(conn: sqlite3.Connection) -> None:
-    """Recordings made before the live bounty existed (watch-only) join it once it does, if
-    they're from the last day: the footage was ready, so clipping starts at once."""
-    conn.execute(
-        """UPDATE live_sessions SET bounty_id=(SELECT b.id FROM bounties b
-               WHERE b.campaign_id=live_sessions.campaign_id AND b.live_clip=1
-               AND b.status='active' ORDER BY b.id DESC LIMIT 1)
-           WHERE bounty_id IS NULL AND purged_at IS NULL AND (state='live' OR ended_at > ?)""",
-        (utc_in(-86400),))
+def move_to(conn: sqlite3.Connection, session_id: int, bounty_id: int | None) -> int:
+    """Put a stream's clips (and its later chunks) in a paid bounty, or back in the stream's own
+    bounty when bounty_id is None. Unposted clips get the bounty's extra caption tags.
+    Returns the number of clips moved."""
+    own = own_bounty(conn, session_id)
+    to = bounty_id or own
+    b = conn.execute("SELECT * FROM bounties WHERE id=?", (to,)).fetchone()
+    if not b or (b["live_session_id"] and b["live_session_id"] != session_id):
+        raise ValueError("no such bounty")
+    conn.execute("UPDATE live_sessions SET bounty_id=? WHERE id=?", (to, session_id))
+    conn.execute("UPDATE sources SET bounty_id=? WHERE id IN (SELECT source_id FROM live_chunks"
+                 " WHERE session_id=? AND source_id IS NOT NULL)", (to, session_id))
+    clips = conn.execute(
+        """SELECT k.id, k.caption, k.status FROM clips k JOIN candidates c ON c.id=k.candidate_id
+           JOIN live_chunks lc ON lc.source_id=c.source_id WHERE lc.session_id=?""",
+        (session_id,)).fetchall()
+    tags = b["required_tags"].split()
+    for k in clips:
+        missing = [t for t in tags if t.lower() not in k["caption"].lower()]
+        if missing and k["status"] in ("in_review", "approved"):
+            conn.execute("UPDATE clips SET caption=? WHERE id=?",
+                         (f"{k['caption']} {' '.join(missing)}".strip(), k["id"]))
+    return len(clips)
 
 
 def queue_chunks(conn: sqlite3.Connection, session_id: int | None = None) -> int:
-    """Queue reported chunks of sessions that have an active live bounty. Idempotent."""
+    """Queue reported chunks of streams that aren't blocked, into the bounty each one is in
+    now. Idempotent."""
     s = get_settings()
     rows = conn.execute(
         """SELECT k.id, k.path, k.overlap_ms, ls.campaign_id, ls.bounty_id, ls.host, ls.title
            FROM live_chunks k JOIN live_sessions ls ON ls.id=k.session_id
            JOIN bounties b ON b.id=ls.bounty_id JOIN campaigns c ON c.id=ls.campaign_id
-           WHERE k.source_id IS NULL AND b.status='active' AND b.live_clip=1
+           WHERE k.source_id IS NULL AND ls.blocked IS NULL AND b.status='active'
              AND c.status='active' AND (? IS NULL OR ls.id=?) ORDER BY k.id""",
         (session_id, session_id)).fetchall()
     for r in rows:
@@ -312,7 +344,8 @@ def report(conn: sqlite3.Connection, session_id: int, body: dict) -> str | None:
     c = conn.execute("SELECT name FROM campaigns WHERE id=?", (sess["campaign_id"],)).fetchone()
     hours = float(body.get("recorded_s") or 0) / 3600
     what = (f"{n['q']} chunk(s) sent for clipping" if n["q"]
-            else f"{n['n']} chunk(s) recorded, not clipped (no live bounty)")
+            else f"{n['n']} chunk(s) recorded, not clipped"
+                 + (f" ({sess['blocked']})" if sess["blocked"] else ""))
     return f"⚫ **{c['name']}**'s stream ended: {hours:.1f} h recorded, {what}."
 
 
@@ -345,10 +378,24 @@ def hashtags(streamer: str, guests: str, text: str) -> list[str]:
     return [t for t in dict.fromkeys(tags) if len(t) > 2]
 
 
-def sessions_for(conn: sqlite3.Connection, campaign_id: int, limit: int = 5) -> list[dict]:
+def sessions(conn: sqlite3.Connection, bounty_id: int | None = None,
+             limit: int = 30) -> list[dict]:
+    """Recent streams, newest first (only those in one bounty, if given), each with its
+    streamer, the bounty its clips are in and their counts by stage."""
     rows = conn.execute(
-        """SELECT ls.*, (SELECT COUNT(*) FROM live_chunks k WHERE k.session_id=ls.id) chunks,
-                  (SELECT COUNT(source_id) FROM live_chunks k WHERE k.session_id=ls.id) queued
-           FROM live_sessions ls WHERE campaign_id=? ORDER BY id DESC LIMIT ?""",
-        (campaign_id, limit)).fetchall()
+        f"""SELECT ls.*, c.name streamer, b.name bounty, b.live_session_id own,
+                  b.campaign_id bounty_cid, bc.name bounty_campaign,
+                  (SELECT COUNT(*) FROM live_chunks k WHERE k.session_id=ls.id) chunks,
+                  (SELECT COUNT(source_id) FROM live_chunks k WHERE k.session_id=ls.id) queued,
+                  {", ".join(_count(st) for st in ("in_review", "approved", "posted"))}
+           FROM live_sessions ls JOIN campaigns c ON c.id=ls.campaign_id
+           LEFT JOIN bounties b ON b.id=ls.bounty_id LEFT JOIN campaigns bc ON bc.id=b.campaign_id
+           WHERE ? IS NULL OR ls.bounty_id=? ORDER BY ls.id DESC LIMIT ?""",
+        (bounty_id, bounty_id, limit)).fetchall()
     return [dict(r) for r in rows]
+
+
+def _count(status: str) -> str:
+    return (f"(SELECT COUNT(*) FROM live_chunks lc JOIN candidates ca ON ca.source_id=lc.source_id"
+            f" JOIN clips k ON k.candidate_id=ca.id WHERE lc.session_id=ls.id"
+            f" AND k.status='{status}') {status}")

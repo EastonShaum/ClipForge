@@ -24,12 +24,14 @@
 </section>
 {% endif %}
 
-{% if b.live_clip %}
+{% if sessions %}
 <section class="card">
   <h2>Live streams</h2>
-  <div class="small">Clipping {{ c.name }}'s live streams every 30 min while they're live{% if not c.live_channels %}; no channel set yet, so ClipForge tries kick.com/ and twitch.tv/ with the name{% else %} ({{ c.live_channels }}){% endif %}. <a href="/campaigns/{{ c.id }}#live">Channels</a></div>
-  {% include "_live_sessions.html" %}
-  {% if not sessions %}<div class="small muted">Not live since this was set up.</div>{% endif %}
+  {% for ls in sessions %}
+  <div class="row small">{% if ls.state == 'live' %}<span class="chip live">● live</span>{% else %}<span class="chip">ended</span>{% endif %}
+    <a href="/lives#live{{ ls.id }}">{{ ls.streamer }} {{ ls.started_at[5:16].replace('T', ' ') }} UTC</a>{% if ls.title %} · “{{ ls.title[:60] }}”{% endif %}</div>
+  {% endfor %}
+  {% if not b.live_session_id %}<div class="small muted">Its clips are in this bounty. Move a stream on the Lives tab.</div>{% endif %}
 </section>
 {% endif %}
 
@@ -138,8 +140,6 @@
     <label>Clips per video <input name="clips_wanted" type="number" min="1" max="18" value="{{ b.clips_wanted }}"></label>
     <label><input type="checkbox" name="auto_queue" value="true" {{ 'checked' if b.auto_queue }} style="width:auto">
       Auto-queue: clip new videos in the folder as soon as they finish downloading (skips the confirm step)</label>
-    <label><input type="checkbox" name="live_clip" value="true" {{ 'checked' if b.live_clip }} style="width:auto">
-      Clip live streams: record {{ c.name }}'s Kick/Twitch streams and clip them every 30 min</label>
     <label><input type="checkbox" name="render_hold" value="true" {{ 'checked' if b.render_hold }} style="width:auto">
       Hold renders until the requirements (and a logo, if they ask for one) are in</label>
     <button class="go small">Save</button>
