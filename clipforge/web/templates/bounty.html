@@ -3,16 +3,14 @@
 {% block content %}
 {% if busy %}<meta http-equiv="refresh" content="20">{% endif %}
 {% include "_bounty_head.html" %}
-<div class="row small">
-  <span class="chip">{{ b.status }}</span>
-  <span class="score">${{ "%.0f"|format(b.rate_usd) }} per {{ b.rate_per_views|num }} views</span>
-  {% if b.min_views %}<span>min {{ b.min_views|num }} views</span>{% endif %}
-  {% if b.cap_usd %}<span>cap {{ b.cap_usd|money }} / clip</span>{% endif %}
-  {% if b.end_date %}<span>ends {{ b.end_date }}</span>{% endif %}
-</div>
+{% if b.status != 'active' or b.cap_usd or b.end_date %}<div class="row small">
+  {% if b.status != 'active' %}<span class="chip">{{ b.status }}</span>{% endif %}
+  {% if b.cap_usd %}<span>Capped at {{ b.cap_usd|money }} per clip</span>{% endif %}
+  {% if b.end_date %}<span>Ends {{ b.end_date }}</span>{% endif %}
+</div>{% endif %}
 {% set tags = (c.required_tags ~ ' ' ~ b.required_tags)|trim %}
 {% if tags %}<div class="small">Caption tags: {{ tags }}</div>{% endif %}
-{% if b.notes %}<div class="small muted">{{ b.notes }}</div>{% endif %}
+{% if b.notes %}<details class="small"><summary>Notes</summary><div class="muted">{{ b.notes }}</div></details>{% endif %}
 
 {% if b.render_hold %}
 <section class="card hold">
@@ -48,7 +46,7 @@
   <details class="small">
     <summary>Use a different folder</summary>
     <form method="post" action="/campaigns/{{ c.id }}/bounties/{{ b.id }}/folder" class="row" style="margin-top:8px">
-      <select name="folder" style="width:auto">
+      <select name="folder">
         {% if b.media_folder not in folders|map(attribute='folder')|list %}<option value="{{ b.media_folder }}" selected>{{ b.media_folder }} (empty)</option>{% endif %}
         {% for f in folders %}<option value="{{ f.folder }}" {{ 'selected' if b.media_folder == f.folder }}>{{ f.folder }} ({{ f.n }} files)</option>{% endfor %}
       </select>
@@ -138,9 +136,9 @@
     <label>Extra caption tags (on top of {{ c.required_tags or 'the campaign\'s' }}) <input name="required_tags" value="{{ b.required_tags }}"></label>
     <label>Notes <textarea name="notes" rows="3">{{ b.notes }}</textarea></label>
     <label>Clips per video <input name="clips_wanted" type="number" min="1" max="18" value="{{ b.clips_wanted }}"></label>
-    <label><input type="checkbox" name="auto_queue" value="true" {{ 'checked' if b.auto_queue }} style="width:auto">
+    <label class="check"><input type="checkbox" name="auto_queue" value="true" {{ 'checked' if b.auto_queue }}>
       Auto-queue: clip new videos in the folder as soon as they finish downloading (skips the confirm step)</label>
-    <label><input type="checkbox" name="render_hold" value="true" {{ 'checked' if b.render_hold }} style="width:auto">
+    <label class="check"><input type="checkbox" name="render_hold" value="true" {{ 'checked' if b.render_hold }}>
       Hold renders until the requirements (and a logo, if they ask for one) are in</label>
     <button class="go small">Save</button>
   </form>

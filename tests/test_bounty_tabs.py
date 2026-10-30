@@ -88,3 +88,26 @@ def test_copy_post_links_one_per_line(client, conn):
 def test_terms_and_privacy_pages(client):
     assert "Terms of Service" in client.get("/terms").text
     assert "open_id" in client.get("/privacy").text
+
+
+def test_home_lists_what_needs_you_and_review_shows_one_clip(client, conn):
+    client.post("/campaigns", data={"name": "Man On", "bounty_name": "episode-4",
+                                    "rate_usd": "125", "rate_mode": "100000",
+                                    "min_views": "100000"})
+    assert "caught up" in client.get("/").text
+    for hook in ("First hook", "Second hook", "Third hook"):
+        _clip(conn, 1, 1, hook, "in_review")
+    _clip(conn, 1, 1, "Ready hook", "approved")
+    home = client.get("/").text
+    assert "Needs you" in home and "/campaigns/1/bounties/1/review" in home
+    assert "Review Man On, episode-4" in home and "/campaigns/1/bounties/1/post" in home
+
+    # One clip at a time: Skip moves along, a decision shows the next at the same place.
+    page = client.get("/campaigns/1/bounties/1/review").text
+    assert "1 of 3" in page and page.count("<video") == 1 and "?at=1" in page
+    assert "2 of 3" in client.get("/campaigns/1/bounties/1/review?at=1").text
+    r = client.post("/clips/1/review", data={"decision": "rejected", "reason": "boring",
+                                             "next": "/campaigns/1/bounties/1/review"})
+    assert "1 of 2" in r.text
+    # The payout line: best clip's views against the bounty's minimum.
+    assert "of 100,000 views on the best clip" in page

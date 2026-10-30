@@ -118,7 +118,8 @@ def test_delete_campaign_removes_everything_it_made(client, conn, settings):
 
 def test_theme_and_old_sources_page(client):
     page = client.get("/review").text
-    assert "localStorage.getItem('theme') || 'dark'" in page and "toggleTheme()" in page
+    assert "localStorage.getItem('theme') || 'light'" in page
+    assert "toggleTheme()" in client.get("/dashboard").text
     assert ">Sources<" not in page
     assert client.get("/sources", follow_redirects=False).headers["location"] == "/campaigns"
 

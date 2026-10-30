@@ -395,6 +395,30 @@ def sessions(conn: sqlite3.Connection, bounty_id: int | None = None,
     return [dict(r) for r in rows]
 
 
+_CHUNK_AT = re.compile(r"#\d+ (\d+)h(\d\d)-")
+
+
+def timeline(conn: sqlite3.Connection, session: dict) -> dict:
+    """Where a stream's clips sit along it, for the Lives tab (D35): one mark per clip, placed
+    by its chunk's start (from the chunk name, "… #04 0h15-0h20") plus its offset in the chunk.
+    Positions are percent of the stream so far."""
+    rows = conn.execute(
+        """SELECT lc.path, ca.start_ms, ca.end_ms, k.status FROM live_chunks lc
+           JOIN candidates ca ON ca.source_id=lc.source_id JOIN clips k ON k.candidate_id=ca.id
+           WHERE lc.session_id=? ORDER BY ca.start_ms""", (session["id"],)).fetchall()
+    marks = []
+    for r in rows:
+        m = _CHUNK_AT.search(r["path"].replace("\\", "/").rsplit("/", 1)[-1])
+        if m:
+            at = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + r["start_ms"] / 1000
+            marks.append((at, (r["end_ms"] - r["start_ms"]) / 1000, r["status"]))
+    total = max([session["recorded_s"] or 0] + [a + d for a, d, _ in marks]) or 1
+    chunk = get_settings().live_chunk_min * 60
+    return {"marks": [{"left": round(a * 100 / total, 2), "width": round(d * 100 / total, 2),
+                       "status": st} for a, d, st in marks],
+            "seg": round(min(100.0, chunk * 100 / total), 3), "total": total}
+
+
 def _count(status: str) -> str:
     return (f"(SELECT COUNT(*) FROM live_chunks lc JOIN candidates ca ON ca.source_id=lc.source_id"
             f" JOIN clips k ON k.candidate_id=ca.id WHERE lc.session_id=ls.id"

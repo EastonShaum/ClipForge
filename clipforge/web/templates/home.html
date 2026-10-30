@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Needs you · ClipForge{% endblock %}
+{% block content %}
+{% set total = (n.review|sum(attribute='n')) + (n.post|sum(attribute='n')) %}
+<h1>Needs you</h1>
+<p class="lede">{% if total %}{{ total }} clip{{ 's' if total != 1 }} across {{ (n.review + n.post)|map(attribute='bid')|unique|list|length }} bount{{ 'ies' if ((n.review + n.post)|map(attribute='bid')|unique|list|length) != 1 else 'y' }}{% else %}You're caught up.{% endif %}</p>
+
+{% set top = n.review[0] if n.review else none %}
+{% if top %}
+<a class="hero" href="/campaigns/{{ top.cid }}/bounties/{{ top.bid }}/review">
+  <span class="num">{{ top.n }}</span>
+  <span>Review {{ top.label }}<small>Best one scores {{ "%.0f"|format(top.best) }}</small></span>
+  <svg class="chev" style="stroke:currentColor" viewBox="0 0 20 20" aria-hidden="true"><path d="M8 4l6 6-6 6"/></svg>
+</a>
+{% endif %}
+
+{% set rows = [] %}
+{% for r in n.review[1:] %}{% set _ = rows.append(('Review', r, 'review', 'Best one scores %.0f'|format(r.best))) %}{% endfor %}
+{% for r in n.post %}{% set _ = rows.append(('Post', r, 'post', '')) %}{% endfor %}
+{% for r in n.views %}{% set _ = rows.append(('Log views', r, 'posted', 'Not checked in a day')) %}{% endfor %}
+{% for r in n.submit %}{% set _ = rows.append(('Submit links', r, 'posted', 'On the campaign site')) %}{% endfor %}
+{% if rows %}
+<div class="list">
+  {% for what, r, tab, note in rows %}
+  <a href="/campaigns/{{ r.cid }}/bounties/{{ r.bid }}/{{ tab }}">
+    <span class="num">{{ r.n }}</span>
+    <span style="min-width:0"><strong>{{ what }}</strong><small class="clamp">{{ r.label }}{% if note %}. {{ note }}{% endif %}</small></span>
+    <svg class="chev" viewBox="0 0 20 20" aria-hidden="true"><path d="M8 4l6 6-6 6"/></svg>
+  </a>
+  {% endfor %}
+</div>
+{% elif not top %}
+<div class="card empty">Nothing waiting. New clips show up here; you also get a Discord ping.
+  <a href="/campaigns">Queue footage on a campaign</a> or <a href="/scout">find a bounty</a>.</div>
+{% endif %}
+
+{% if streams %}
+<h2>Live now</h2>
+{% for ls in streams %}
+<div class="card">
+  <div class="row"><span class="chip live">● live</span><strong>{{ ls.streamer }}</strong>
+    <span class="muted small">recording {{ ls.recorded_s|hm }}</span></div>
+  {% if ls.blocked %}<div class="small status-failed">Not clipped: the title looks like gambling.</div>
+  {% elif ls.own %}<div class="small muted">No bounty yet. Clips stay with this stream until you pick one.</div>
+  {% else %}<div class="small muted">Clips go to {{ ls.bounty_campaign }}, {{ ls.bounty }}.</div>{% endif %}
+  <a class="btn small" style="justify-self:start" href="/lives#live{{ ls.id }}">Open stream</a>
+</div>
+{% endfor %}
+{% endif %}
+{% endblock %}

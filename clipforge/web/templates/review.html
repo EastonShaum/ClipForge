@@ -1,43 +1,55 @@
 {% extends "base.html" %}
-{% block title %}Review ({{ clips|length }}) · {{ b.name }} · ClipForge{% endblock %}
+{% block title %}Review ({{ total }}) · {{ b.name }} · ClipForge{% endblock %}
 {% block content %}
 {% include "_bounty_head.html" %}
-{% for c in clips %}
+{% if clip %}{% set c = clip %}
 <article class="card" id="clip{{ c.id }}">
   <div class="row">
-    <span class="score">{{ "%.0f"|format(c.score) }}</span>
+    <span class="num" style="font-size:30px" title="score">{{ "%.0f"|format(c.score) }}</span>
     <span class="chip">{{ c.hook_type.replace('_',' ') }}</span>
     <span class="chip">{{ (c.end_ms - c.start_ms)|secs }}</span>
+    <span class="muted small" style="margin-left:auto">{{ at + 1 }} of {{ total }}</span>
   </div>
+  <video src="/media/clips/{{ c.path }}" controls playsinline preload="metadata" aria-label="The clip"></video>
   <div class="hook">{{ c.hook_text }}</div>
-  <video src="/media/clips/{{ c.path }}" controls playsinline preload="metadata"></video>
   <div class="small muted">{{ c.rationale }}</div>
   <div class="small muted">From {% if c.src_url.startswith('http') %}<a href="{{ c.src_url }}" target="_blank" rel="noopener">{{ c.src_title or c.src_url }}</a>{% else %}{{ c.src_title or c.src_url }}{% endif %}
     at {{ c.start_ms|mmss }} · {{ c.prompt or "no prompt" }}</div>
-  <form method="post" action="/clips/{{ c.id }}/review" class="row">
+</article>
+
+<div class="decide">
+  <button type="button" class="big" onclick="document.getElementById('why').showModal()">Reject</button>
+  {% if total > 1 %}<a class="btn" href="{{ request.url.path }}?at={{ (at + 1) % total }}" aria-label="Skip to the next clip">Skip</a>{% endif %}
+  <form method="post" action="/clips/{{ c.id }}/review" style="display:flex;flex:2">
     <input type="hidden" name="decision" value="approved">
     <input type="hidden" name="next" value="{{ here }}">
     <button class="go big">Approve</button>
   </form>
-  <details>
-    <summary>Reject…</summary>
-    <form method="post" action="/clips/{{ c.id }}/review" class="reject" style="margin-top:8px">
-      <input type="hidden" name="decision" value="rejected">
-      <input type="hidden" name="next" value="{{ here }}">
-      <div class="small muted">Pick any that apply, add your own words, then reject.</div>
-      <div class="row">
-      {% for key, label in reasons.items() %}
-        <label class="pick"><input type="checkbox" name="reason" value="{{ key }}"><span>{{ label }}</span></label>
-      {% endfor %}
-      </div>
-      <textarea name="note" rows="2" placeholder="Your feedback, e.g. &quot;great story but the first 5 s are slow&quot;"></textarea>
-      <button class="no big">Reject</button>
-    </form>
-  </details>
-</article>
+</div>
+
+<dialog class="sheet" id="why" aria-labelledby="why-h">
+  <div class="grip" aria-hidden="true"></div>
+  <form method="post" action="/clips/{{ c.id }}/review" class="reject">
+    <input type="hidden" name="decision" value="rejected">
+    <input type="hidden" name="next" value="{{ here }}">
+    <h2 id="why-h" style="margin:0">What's wrong with it?</h2>
+    <div class="small muted">Pick any that fit. The clip picker learns from these.</div>
+    <div class="row">
+    {% for key, label in reasons.items() %}
+      <label class="pick"><input type="checkbox" name="reason" value="{{ key }}"><span>{{ label[:1]|upper }}{{ label[1:] }}</span></label>
+    {% endfor %}
+    </div>
+    <label>Anything else
+      <textarea name="note" rows="2" placeholder="Great story but the first 5 s are slow…"></textarea></label>
+    <div class="row">
+      <button type="button" class="big" onclick="this.closest('dialog').close()">Cancel</button>
+      <button class="no big" style="flex:2">Reject clip</button>
+    </div>
+  </form>
+</dialog>
 {% else %}
-<div class="card empty">Nothing to review for this bounty.
-  {% if tabs.approved %}<a href="/campaigns/{{ c.id }}/bounties/{{ b.id }}/post">{{ tabs.approved }} approved clip(s) ready to post.</a>
-  {% else %}Queue footage under <a href="/campaigns/{{ c.id }}/bounties/{{ b.id }}">Footage &amp; settings</a>; you'll get a Discord ping when clips are ready.{% endif %}</div>
-{% endfor %}
+<div class="card empty">Nothing to review here.
+  {% if tabs.approved %}<a href="/campaigns/{{ c.id }}/bounties/{{ b.id }}/post">{{ tabs.approved }} approved clip{{ 's' if tabs.approved != 1 }} ready to post.</a>
+  {% elif not b.live_session_id %}Queue footage on the <a href="/campaigns/{{ c.id }}/bounties/{{ b.id }}">Footage</a> tab; you'll get a Discord ping when clips are ready.{% endif %}</div>
+{% endif %}
 {% endblock %}

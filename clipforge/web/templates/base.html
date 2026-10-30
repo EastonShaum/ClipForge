@@ -5,31 +5,37 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>{% block title %}ClipForge{% endblock %}</title>
 <script>
-// Dark by default; the nav switch stores a per-device choice. Runs before paint: no flash.
-try { document.documentElement.dataset.theme = localStorage.getItem('theme') || 'dark'; }
-catch (e) { document.documentElement.dataset.theme = 'dark'; }
+// Light by default; the switch on the Stats page stores a per-device choice. Runs before paint.
+try { document.documentElement.dataset.theme = localStorage.getItem('theme') || 'light'; }
+catch (e) { document.documentElement.dataset.theme = 'light'; }
 </script>
+<meta name="theme-color" content="#f3f4f8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#12141f" media="(prefers-color-scheme: dark)">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<nav>
-  {% set in_live = active == 'lives' or (b is defined and b and b.live_session_id) %}
-  <a href="/campaigns" class="{{ 'on' if not in_live and active in ('campaigns', 'campaign', 'bounty', 'queue', 'review', 'post', 'posted') }}">Campaigns</a>
-  <a href="/lives" class="{{ 'on' if in_live }}">Lives</a>
-  <a href="/scout" class="{{ 'on' if active == 'scout' }}">Scout</a>
-  <a href="/dashboard" class="{{ 'on' if active == 'dashboard' }}">Dashboard</a>
-  <button type="button" class="theme" onclick="toggleTheme()" aria-label="Switch light or dark theme">◐</button>
-</nav>
-<script>
-// The bounty tabs stick just under the nav; its height changes with font size and wrapping.
-(() => { const n = document.querySelector("nav"), set = () =>
-  document.documentElement.style.setProperty("--nav-h", n.offsetHeight + "px");
-  set(); addEventListener("resize", set); })();
-</script>
-<main>
-  {% if msg %}<div class="msg" role="status">{{ msg }}</div>{% endif %}
+<a class="skip" href="#main">Skip to content</a>
+{% set in_live = active == 'lives' or (b is defined and b and b.live_session_id) %}
+{% set in_camp = not in_live and active in ('campaigns', 'campaign', 'bounty', 'queue', 'review', 'post', 'posted') %}
+<main id="main">
+  {% if msg %}<div class="msg" role="status" aria-live="polite">{{ msg }}</div>{% endif %}
   {% block content %}{% endblock %}
 </main>
+<nav class="tabbar" aria-label="Main">
+  <a href="/" class="{{ 'on' if active == 'home' }}" {{ 'aria-current=page' if active == 'home' }}>
+    <svg viewBox="0 0 22 22" aria-hidden="true"><path d="M3 10l8-6 8 6v8H3z"/></svg>Home</a>
+  <a href="/campaigns" class="{{ 'on' if in_camp }}" {{ 'aria-current=page' if in_camp }}>
+    <svg viewBox="0 0 22 22" aria-hidden="true"><rect x="3" y="5" width="16" height="12" rx="2"/><path d="M7 9h8M7 13h5"/></svg>Campaigns</a>
+  <a href="/lives" class="{{ 'on' if in_live }}" {{ 'aria-current=page' if in_live }}>
+    <svg viewBox="0 0 22 22" aria-hidden="true"><circle cx="11" cy="11" r="3"/><path d="M5 5a8.5 8.5 0 000 12M17 5a8.5 8.5 0 010 12"/></svg><span class="{{ 'dot' if live_now() }}">Lives</span></a>
+  <a href="/scout" class="{{ 'on' if active == 'scout' }}" {{ 'aria-current=page' if active == 'scout' }}>
+    <svg viewBox="0 0 22 22" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="M15 15l4 4"/></svg>Scout</a>
+  <a href="/dashboard" class="{{ 'on' if active == 'dashboard' }}" {{ 'aria-current=page' if active == 'dashboard' }}>
+    <svg viewBox="0 0 22 22" aria-hidden="true"><path d="M4 18V9M10 18V4M16 18v-6"/></svg>Stats</a>
+</nav>
 <script>
 function toggleTheme() {
   const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
@@ -49,6 +55,11 @@ function copyValue(text, btn) {
   if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(done, fallback);
   else fallback();
 }
+// Confirm before a destructive form submits (data-confirm on the form).
+document.addEventListener("submit", e => {
+  const m = e.target.dataset.confirm;
+  if (m && !confirm(m)) e.preventDefault();
+});
 </script>
 </body>
 </html>

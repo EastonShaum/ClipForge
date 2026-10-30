@@ -22,6 +22,7 @@ from clipforge import (
     bounties,
     briefs,
     costs,
+    inbox,
     jobqueue,
     library,
     live,
@@ -101,6 +102,20 @@ def db() -> Iterator[sqlite3.Connection]:
 DB = Annotated[sqlite3.Connection, Depends(db)]
 
 
+def _live_now() -> bool:
+    """For the tab bar's dot: is a watched streamer live?"""
+    conn = connect()
+    try:
+        return bool(conn.execute("SELECT 1 FROM live_sessions WHERE state='live'").fetchone())
+    except sqlite3.Error:
+        return False
+    finally:
+        conn.close()
+
+
+templates.env.globals["live_now"] = _live_now
+
+
 def page(request: Request, name: str, **ctx):
     return templates.TemplateResponse(request, name, {"active": name.split(".")[0], **ctx})
 
@@ -170,7 +185,10 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
             streamers.append({**dict(c), "channels": [
                 (ch, live.channel_url(ch), live.channel_status(conn, ch))
                 for ch in live.parse_channels(c["live_channels"])[0]]})
-        return page(request, "lives.html", streamers=streamers, sessions=live.sessions(conn),
+        sessions = live.sessions(conn)
+        for ls in sessions:
+            ls["tl"] = live.timeline(conn, ls)
+        return page(request, "lives.html", streamers=streamers, sessions=sessions,
                     paid=bounties.paid_bounties(conn), live_dir=s.live_dir.name, msg=msg,
                     every=s.live_check_s // 60)
 
@@ -286,8 +304,9 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
 
     # ---------- review → post → posted, inside each bounty ----------
     @app.get("/")
-    def home():
-        return RedirectResponse("/campaigns")
+    def home(request: Request, conn: DB, msg: str = ""):
+        return page(request, "home.html", n=inbox.needs_you(conn), msg=msg,
+                    streams=[r for r in live.sessions(conn, limit=5) if r["state"] == "live"])
 
     # The old top-level pages (and older Discord links) jump to the bounty that needs it.
     @app.get("/review")
@@ -312,12 +331,19 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         c = _camp_or_404(conn, cid)
         b = _bounty_or_404(conn, cid, bid)
         return page(request, f"{name}.html", c=c, b=b, tabs=clip_counts(conn, bid),
-                    here=f"/campaigns/{cid}/bounties/{bid}/{name}", **ctx)
+                    prog=inbox.progress(conn, b),
+                    here=ctx.pop("here", f"/campaigns/{cid}/bounties/{bid}/{name}"), **ctx)
 
     @app.get("/campaigns/{cid}/bounties/{bid}/review")
-    def bounty_review(request: Request, cid: int, bid: int, conn: DB, msg: str = ""):
-        return _tab(request, conn, cid, bid, "review", clips=_clip_rows(conn, "in_review", bid),
-                    reasons=REJECT_REASONS, msg=msg)
+    def bounty_review(request: Request, cid: int, bid: int, conn: DB, msg: str = "",
+                      at: int = 0):
+        """One clip at a time, best first. Deciding takes it out of the list, so the same
+        position shows the next one; Skip moves along."""
+        clips = _clip_rows(conn, "in_review", bid)
+        at = max(0, min(at, len(clips) - 1)) if clips else 0
+        here = f"/campaigns/{cid}/bounties/{bid}/review" + (f"?at={at}" if at else "")
+        return _tab(request, conn, cid, bid, "review", clip=clips[at] if clips else None,
+                    at=at, total=len(clips), reasons=REJECT_REASONS, msg=msg, here=here)
 
     @app.get("/campaigns/{cid}/bounties/{bid}/post")
     def bounty_post(request: Request, cid: int, bid: int, conn: DB, msg: str = ""):
@@ -446,6 +472,8 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         camps = list_campaigns(conn)
         for c in camps:
             c["bounties"] = list_bounties(conn, c["id"])
+            for b in c["bounties"]:
+                b["prog"] = inbox.progress(conn, b)
         # A streamer added on the Lives tab, with no paid bounty, lives there only.
         camps = [c for c in camps if c["bounties"] or not (c["watch_live"] or c["live_channels"])]
         return page(request, "campaigns.html", campaigns=camps, msg=msg, prefill=prefill)
@@ -578,7 +606,8 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
                     sources=sources, files=files, new_files=[f for f in files if not f["queued"]],
                     folders=library.folders(conn), hosts=[s.host_name, *remote_hosts(conn)],
                     busy=busy, library_dir=s.media_library_dir.name, msg=msg,
-                    tabs=clip_counts(conn, bid), holds=bounties.hold_reasons(conn, b),
+                    tabs=clip_counts(conn, bid), prog=inbox.progress(conn, b),
+                    holds=bounties.hold_reasons(conn, b),
                     held=bounties.held_count(conn, bid),
                     sessions=live.sessions(conn, bounty_id=bid))
 

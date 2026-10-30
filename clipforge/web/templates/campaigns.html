@@ -4,13 +4,18 @@
 <h1>Campaigns</h1>
 {% for c in campaigns %}
 <article class="card">
-  <a class="camp-link row" href="/campaigns/{{ c.id }}"><b>{{ c.name }}</b><span class="chip">{{ c.status }}</span>
-    {% if c.category %}<span class="chip">{{ c.category }}</span>{% endif %}
-</a>
-  {% for b in c.bounties %}
-  <a class="camp-link bounty-row small" href="/campaigns/{{ c.id }}/bounties/{{ b.id }}">
-    <span>↳ {{ b.name }}</span>
-    <span class="muted">${{ "%.0f"|format(b.rate_usd) }}/{{ (b.rate_per_views // 1000)|num }}K · {{ b.sources }} videos · {{ b.clips }} clips{% if b.status != 'active' %} · {{ b.status }}{% endif %}{% if b.end_date %} · ends {{ b.end_date }}{% endif %}</span>
+  <a class="camp-link row" href="/campaigns/{{ c.id }}"><h2 style="margin:0">{{ c.name }}</h2>
+    {% if c.status != 'active' %}<span class="chip">{{ c.status }}</span>{% endif %}
+    <svg class="chev" viewBox="0 0 20 20" aria-hidden="true"><path d="M8 4l6 6-6 6"/></svg>
+  </a>
+  {% for b in c.bounties %}{% set p = b.prog %}
+  <a class="camp-link bounty-row" href="/campaigns/{{ c.id }}/bounties/{{ b.id }}">
+    <span class="row"><strong>{{ b.name }}</strong><span class="small" style="margin-left:auto">${{ "%.0f"|format(b.rate_usd) }} per {{ (b.rate_per_views // 1000)|num }}K</span></span>
+    {% if p.line %}
+    <span class="row"><span class="num" style="font-size:24px">{{ p.best|num }}</span><span class="small muted">of {{ p.line|num }} views on the best clip</span></span>
+    <span class="bar"><i style="width: {{ p.pct }}%"></i></span>
+    {% endif %}
+    <span class="small muted">{{ b.sources }} video{{ 's' if b.sources != 1 }}, {{ b.clips }} clips{% if b.status != 'active' %}, {{ b.status }}{% endif %}{% if b.end_date %}, ends {{ b.end_date }}{% endif %}</span>
   </a>
   {% if b.in_review or b.approved or b.posted %}
   <div class="row small stage-links">
@@ -47,9 +52,9 @@
   <label>YouTube RSS feeds to watch <input name="watch_feeds" placeholder="https://www.youtube.com/feeds/videos.xml?channel_id=…"></label>
   <label>Notes <input name="notes" value="{{ prefill.notes or '' }}"></label>
   <label>Kick / Twitch channels <input name="live_channels" placeholder="kick.com/n3on (empty: found by name)" value="{{ prefill.live_channels or '' }}"></label>
-  <label><input type="checkbox" name="live_clip" value="true" {{ 'checked' if prefill.live }} style="width:auto">
+  <label class="check"><input type="checkbox" name="live_clip" value="true" {{ 'checked' if prefill.live }}>
     Clip their live streams into this bounty. Clips render once you add the requirement screenshots.</label>
-  <label class="row" style="grid-template-columns:auto 1fr"><input type="checkbox" name="force" style="width:auto"> Override blocklist</label>
+  <label class="check"><input type="checkbox" name="force"> Override the gambling blocklist</label>
   <button class="go">Add campaign</button>
 </form>
 </details>

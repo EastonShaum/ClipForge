@@ -15,7 +15,7 @@
   {% for b in bounties %}
   <a class="camp-link bounty-row" href="/campaigns/{{ c.id }}/bounties/{{ b.id }}">
     <b>{{ b.name }}</b>
-    <span class="small muted">${{ "%.0f"|format(b.rate_usd) }} per {{ b.rate_per_views|num }} views · {{ b.sources }} videos · {{ b.clips }} clips{% if b.status != 'active' %} · {{ b.status }}{% endif %}{% if b.end_date %} · ends {{ b.end_date }}{% endif %}</span>
+    <span class="small muted">${{ "%.0f"|format(b.rate_usd) }} per {{ b.rate_per_views|num }} views · {{ b.sources }} video{{ 's' if b.sources != 1 }} · {{ b.clips }} clips{% if b.status != 'active' %} · {{ b.status }}{% endif %}{% if b.end_date %} · ends {{ b.end_date }}{% endif %}</span>
   </a>
   {% else %}
   <div class="small muted">No bounties yet.</div>

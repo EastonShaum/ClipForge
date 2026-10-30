@@ -2,7 +2,7 @@
 {% block title %}Lives · ClipForge{% endblock %}
 {% block content %}
 <h1>Lives</h1>
-<div class="small muted">ClipForge checks these channels every {{ every }} min. When a streamer goes live you get a Discord ping, the laptop records the stream to {{ live_dir }}, and it's clipped every few minutes. Each stream keeps its own clips; if a bounty comes up, move the stream into it.</div>
+<p class="lede">Clipped every few minutes while they stream. Each stream keeps its own clips; if a bounty comes up, move the stream into it.</p>
 
 <h2>Streams</h2>
 {% for ls in sessions %}
@@ -17,6 +17,12 @@
     {% if ls.state == 'live' and not ls.host %} · <span class="status-failed">not recording: laptop worker offline</span>
     {% elif ls.state == 'live' and ls.rec_error and not ls.recording %} · <span class="status-failed">{{ ls.rec_error[:120] }}</span>{% endif %}
     {% if ls.purged_at %} · recording deleted{% endif %}</div>
+  {% if ls.tl.marks %}
+  <div class="timeline" style="--seg: {{ ls.tl.seg }}%" role="img" aria-label="{{ ls.tl.marks|length }} clips along the stream">
+    {% for m in ls.tl.marks %}<i class="{{ m.status }}" style="left: {{ m.left }}%; width: {{ m.width }}%"></i>{% endfor %}
+  </div>
+  <div class="legend"><span style="--k: var(--mark)">To review</span><span style="--k: var(--accent)">Approved</span><span style="--k: var(--fg)">Posted</span><span style="--k: var(--edge)">Rejected</span><span style="margin-left:auto">{{ ls.tl.total|hm }}</span></div>
+  {% endif %}
   {% if ls.blocked %}
   <div class="small status-failed">🚫 Not clipped: the title looks like gambling ({{ ls.blocked }}).</div>
   {% else %}
@@ -57,7 +63,7 @@
   {% endfor %}
   <form method="post" action="/campaigns/{{ c.id }}/live" class="grid2">
     <label>Kick / Twitch channels <input name="live_channels" value="{{ c.live_channels }}" placeholder="kick.com/n3on twitch.tv/n3on"></label>
-    <label><input type="checkbox" name="watch_live" value="true" {{ 'checked' if c.watch_live }} style="width:auto">
+    <label class="check"><input type="checkbox" name="watch_live" value="true" {{ 'checked' if c.watch_live }}>
       Watch: ping me, record and clip when they go live</label>
     <button class="go small">Save</button>
   </form>

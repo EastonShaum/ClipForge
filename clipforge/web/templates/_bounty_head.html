@@ -1,14 +1,23 @@
+{% set base = "/campaigns/" ~ c.id ~ "/bounties/" ~ b.id %}
 {% if b.live_session_id %}
-<div class="small"><a href="/lives">Lives</a> › {{ c.name }}</div>
+<div class="crumbs"><a href="/lives">Lives</a></div>
 <h1>{{ c.name }} {{ b.name }}</h1>
 {% else %}
-<div class="small"><a href="/campaigns">Campaigns</a> › <a href="/campaigns/{{ c.id }}">{{ c.name }}</a></div>
+<div class="crumbs"><a href="/campaigns">Campaigns</a> › <a href="/campaigns/{{ c.id }}">{{ c.name }}</a></div>
 <h1>{{ b.name }}</h1>
+{% if prog %}
+<div class="payout">
+  {% if prog.line %}
+  <div class="row"><span class="num">{{ prog.best|num }}</span><span class="small muted">of {{ prog.line|num }} views on the best clip, the payout line</span></div>
+  <div class="bar"><i style="width: {{ prog.pct }}%"></i></div>
+  {% endif %}
+  <div class="small muted">${{ "%.0f"|format(b.rate_usd) }} per {{ b.rate_per_views|num }} views · {{ prog.posts }} post{{ 's' if prog.posts != 1 }}, {{ prog.views|num }} views{% if prog.earn %} · about {{ prog.earn|money }} earned{% endif %}</div>
+</div>
 {% endif %}
-{% set base = "/campaigns/" ~ c.id ~ "/bounties/" ~ b.id %}
-<div class="tabs">
+{% endif %}
+<div class="tabs" role="navigation" aria-label="Bounty">
   <a href="{{ base }}/review" class="{{ 'on' if active == 'review' }}">Review{% if tabs.in_review %} <span class="count">{{ tabs.in_review }}</span>{% endif %}</a>
   <a href="{{ base }}/post" class="{{ 'on' if active == 'post' }}">Post{% if tabs.approved %} <span class="count">{{ tabs.approved }}</span>{% endif %}</a>
   <a href="{{ base }}/posted" class="{{ 'on' if active == 'posted' }}">Posted{% if tabs.posted %} <span class="count">{{ tabs.posted }}</span>{% endif %}</a>
-  <a href="{{ base }}" class="{{ 'on' if active == 'bounty' }}">Footage</a>
+  <a href="{{ base }}" class="{{ 'on' if active == 'bounty' }}">{{ 'Stream' if b.live_session_id else 'Footage' }}</a>
 </div>
