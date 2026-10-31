@@ -240,3 +240,7 @@ Easton reviewed three mockups (Cutting room, Thumb zone, Scoreboard) and picked 
 - **Payout progress** on the Campaigns list and each bounty's header: the best clip's views against the bounty's minimum (`inbox.progress`).
 - **Lives:** each stream is a timeline with a mark per clip, colored by stage (`live.timeline`, placed from the chunk name's start time).
 - The skills these came from are in `.claude/skills/` (frontend-design from Anthropic, web-design-guidelines from Vercel).
+
+## D36. Clip shape per streamer (2026-10-30)
+- The auto layout (D34) looks for flat screen panels. A 3D game (BurntPeanut's Dead by Daylight) has none, so it read as a camera and got cropped to the middle. yt-dlp doesn't report the Twitch category, so the stream can't tell us either.
+- Each streamer on the Lives tab has a "Clip shape": Auto (default), Full width (games, screens) or Crop to the middle (IRL). Stored in `campaigns.live_layout` (NULL = `CF_LIVE_LAYOUT`) and passed in the render context. BurntPeanut is set to Full width. No worker protocol bump: workers already know `blurfill` and `crop`.

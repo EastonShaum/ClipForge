@@ -68,7 +68,8 @@ ADDED_COLUMNS = [("campaigns", "logo_path", "TEXT"), ("posts", "submitted_at", "
                  ("sources", "skip_ms", "INTEGER NOT NULL DEFAULT 0"),
                  ("live_sessions", "guests", "TEXT NOT NULL DEFAULT ''"),
                  ("live_sessions", "blocked", "TEXT"),
-                 ("bounties", "live_session_id", "INTEGER")]
+                 ("bounties", "live_session_id", "INTEGER"),
+                 ("campaigns", "live_layout", "TEXT")]
 
 # One-time: campaigns made before bounties existed become a campaign with one bounty that
 # carries their rate, end date and folder; their sources and brief screenshots move to it.

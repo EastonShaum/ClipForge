@@ -276,3 +276,26 @@ def test_auto_layout_keeps_a_shared_screen_whole_and_crops_a_camera(tmp_path):
                         str(tmp_path / f"{name}.mp4")], check=True)
     assert layout.choose("auto", str(tmp_path / "screen.mp4"), 0, 2000) == "blurfill"
     assert layout.choose("auto", str(tmp_path / "camera.mp4"), 0, 2000) == "crop"
+
+
+def test_a_gaming_streamer_can_be_set_to_full_width(client, conn):
+    # A 3D game has no flat panels, so auto reads it as a camera: Easton sets the streamer.
+    from clipforge.config import get_settings
+    from clipforge.pipeline import build_context
+    client.post("/lives/watch", data={"name": "BurntPeanut",
+                                      "live_channels": "twitch.tv/theburntpeanut"})
+    live.check(conn, _probe({"twitch.tv/theburntpeanut": {"id": "1", "title": "DBD"}}))
+    sess = live.for_recorder(conn, "eastons-laptop")["sessions"][0]
+    live.report(conn, sess["id"], {"chunks": [{"path": "C:/Live/a.ffconcat", "overlap_ms": 0}],
+                                   "recording": True})
+    src = conn.execute("SELECT id FROM sources").fetchone()["id"]
+    cand = conn.execute("INSERT INTO candidates (source_id, start_ms, end_ms, hook_text, score,"
+                        " rank) VALUES (?, 0, 9000, 'h', 50, 1)", (src,)).lastrowid
+    job = {"kind": "render", "candidate_id": cand}
+    assert build_context(conn, get_settings(), job)["layout"] == "auto"
+    cid = conn.execute("SELECT campaign_id FROM live_sessions").fetchone()[0]
+    client.post(f"/campaigns/{cid}/live", data={"live_channels": "twitch.tv/theburntpeanut",
+                                                "watch_live": "true",
+                                                "live_layout": "blurfill"})
+    assert build_context(conn, get_settings(), job)["layout"] == "blurfill"
+    assert 'value="blurfill" selected' in client.get("/lives").text

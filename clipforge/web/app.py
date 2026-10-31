@@ -641,14 +641,15 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
 
     @app.post("/campaigns/{cid}/live")
     def campaign_live(cid: int, conn: DB, live_channels: str = Form(""),
-                      watch_live: bool = Form(False)):
+                      watch_live: bool = Form(False), live_layout: str = Form("")):
         _camp_or_404(conn, cid)
         chans, bad = live.parse_channels(live_channels)
         if bad:
             return back("/lives", f"Not a Kick or Twitch channel:"
                         f" {' '.join(bad)} (use e.g. kick.com/n3on)")
-        conn.execute("UPDATE campaigns SET live_channels=?, watch_live=? WHERE id=?",
-                     (" ".join(chans), int(watch_live), cid))
+        conn.execute("UPDATE campaigns SET live_channels=?, watch_live=?, live_layout=? WHERE id=?",
+                     (" ".join(chans), int(watch_live),
+                      live_layout if live_layout in ("blurfill", "crop") else None, cid))
         return back("/lives", "Saved. Channels are checked every"
                     f" {s.live_check_s // 60} min.")
 

@@ -82,12 +82,13 @@ def build_context(conn: sqlite3.Connection, s: Settings, job: sqlite3.Row) -> di
     if kind == "render":
         cand = conn.execute("SELECT * FROM candidates WHERE id=?", (job["candidate_id"],)).fetchone()
         src = _source(conn, cand["source_id"])
+        info = live.stream_info(conn, src["id"])
         return {"candidate_id": cand["id"], "source_id": src["id"],
                 "media_path": src["media_path"],
                 "start_ms": cand["start_ms"], "end_ms": cand["end_ms"],
                 "hook": cand["hook_text"], "out_rel": f"{src['id']}/c{cand['id']}.mp4",
                 "disclosure": src["disclosure"], "logo_rels": logo_list(src["logo_path"]),
-                "layout": s.live_layout if live.stream_info(conn, src["id"]) else None}
+                "layout": (info["live_layout"] or s.live_layout) if info else None}
     if kind == "scout":
         shot = _shot(conn, job)
         try:

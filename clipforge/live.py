@@ -351,9 +351,10 @@ def report(conn: sqlite3.Connection, session_id: int, body: dict) -> str | None:
 
 def stream_info(conn: sqlite3.Connection, source_id: int) -> dict | None:
     """For a source cut from a live recording: the streamer (the campaign's name), the guests
-    Easton listed for that stream, and its title. None for ordinary footage."""
+    Easton listed for that stream, its title and the streamer's layout (NULL: auto). None for
+    ordinary footage."""
     r = conn.execute(
-        """SELECT c.name streamer, ls.guests, ls.title FROM live_chunks k
+        """SELECT c.name streamer, ls.guests, ls.title, c.live_layout FROM live_chunks k
            JOIN live_sessions ls ON ls.id=k.session_id JOIN campaigns c ON c.id=ls.campaign_id
            WHERE k.source_id=?""", (source_id,)).fetchone()
     return dict(r) if r else None
