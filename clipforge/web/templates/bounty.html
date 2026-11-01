@@ -27,7 +27,7 @@
   <h2>Live streams</h2>
   {% for ls in sessions %}
   <div class="row small">{% if ls.state == 'live' %}<span class="chip live">● live</span>{% else %}<span class="chip">ended</span>{% endif %}
-    <a href="/lives#live{{ ls.id }}">{{ ls.streamer }} {{ ls.started_at[5:16].replace('T', ' ') }} UTC</a>{% if ls.title %} · “{{ ls.title[:60] }}”{% endif %}</div>
+    <a href="/lives#live{{ ls.id }}">{{ ls.streamer }} {{ ls.started_at|local }}</a>{% if ls.title %} · “{{ ls.title[:60] }}”{% endif %}</div>
   {% endfor %}
   {% if not b.live_session_id %}<div class="small muted">Its clips are in this bounty. Move a stream on the Lives tab.</div>{% endif %}
 </section>

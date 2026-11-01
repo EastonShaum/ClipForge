@@ -21,7 +21,7 @@
   <div class="row"><span class="hook" style="flex:1">{{ c.hook_text }}</span>
     {% if c.posts %}<button type="button" class="small" data-links="{{ c.posts|map(attribute='url')|join('\n') }}"
             onclick="copyValue(this.dataset.links, this)">Copy {{ c.posts|length }} link{{ 's' if c.posts|length > 1 }}</button>{% endif %}
-    <a class="small" href="/media/clips/{{ c.path }}" target="_blank" rel="noopener">watch</a></div>
+    {% if c.file_deleted_at %}<span class="small muted">video deleted</span>{% else %}<a class="small" href="/media/clips/{{ c.path }}" target="_blank" rel="noopener">watch</a>{% endif %}</div>
   {% for p in c.posts %}
   <div class="post" id="post{{ p.id }}">
     <div class="row small">
@@ -29,7 +29,7 @@
       <a href="{{ p.url }}" target="_blank" rel="noopener">open</a>
       <span class="score">{{ p.views|num if p.views is not none else '–' }} views</span>
       {% if b.min_views and (p.views or 0) >= b.min_views %}<span class="chip">qualifies</span>{% endif %}
-      <span class="muted">posted {{ p.posted_at[:10] }}{% if p.checked %} · checked {{ p.checked[:16].replace('T',' ') }}{% endif %}</span>
+      <span class="muted">posted {{ p.posted_at|local }}{% if p.checked %} · checked {{ p.checked|local }}{% endif %}</span>
     </div>
     <form method="post" action="/posts/{{ p.id }}/views" class="row">
       <input type="hidden" name="next" value="{{ here }}#post{{ p.id }}">

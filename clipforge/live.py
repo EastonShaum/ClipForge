@@ -276,7 +276,8 @@ def queue_chunks(conn: sqlite3.Connection, session_id: int | None = None) -> int
         """SELECT k.id, k.path, k.overlap_ms, ls.campaign_id, ls.bounty_id, ls.host, ls.title
            FROM live_chunks k JOIN live_sessions ls ON ls.id=k.session_id
            JOIN bounties b ON b.id=ls.bounty_id JOIN campaigns c ON c.id=ls.campaign_id
-           WHERE k.source_id IS NULL AND ls.blocked IS NULL AND b.status='active'
+           WHERE k.source_id IS NULL AND ls.blocked IS NULL AND ls.stopped_at IS NULL
+             AND ls.delete_asked_at IS NULL AND b.status='active'
              AND c.status='active' AND (? IS NULL OR ls.id=?) ORDER BY k.id""",
         (session_id, session_id)).fetchall()
     for r in rows:
@@ -291,6 +292,57 @@ def queue_chunks(conn: sqlite3.Connection, session_id: int | None = None) -> int
     return len(rows)
 
 
+# What keeps a finished stream's recording past live_keep_hours: chunks still being clipped, and
+# picked clips not rendered yet (a bounty holding renders until its rules are in). A chunk with
+# no good moments stays at 'selected'; it doesn't keep the recording.
+WAITING_JOBS = """SELECT 1 FROM live_chunks k JOIN jobs j ON j.source_id=k.source_id
+                  WHERE k.session_id=ls.id AND j.state IN ('queued','running','failed')"""
+WAITING_CLIPS = """SELECT 1 FROM live_chunks k JOIN candidates c ON c.source_id=k.source_id
+                   WHERE k.session_id=ls.id AND c.kept=1
+                   AND NOT EXISTS (SELECT 1 FROM clips cl WHERE cl.candidate_id=c.id)
+                   AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.candidate_id=c.id
+                                   AND j.kind='render' AND j.state='dead')"""
+
+
+def _cancel_jobs(conn: sqlite3.Connection, session_id: int, why: str) -> int:
+    """Drop the stream's chunks that are queued but not started."""
+    return conn.execute(
+        "UPDATE jobs SET state='cancelled', last_error=? WHERE state IN ('queued','failed')"
+        " AND source_id IN (SELECT source_id FROM live_chunks WHERE session_id=?)",
+        (why, session_id)).rowcount
+
+
+def set_recording(conn: sqlite3.Connection, session_id: int, on: bool) -> bool:
+    """Turn a live stream's recording and clipping off or back on. Off stops the recorder and
+    drops chunks not started yet; chunks already being clipped finish. False if the stream
+    isn't live (or its recording was deleted)."""
+    with tx(conn):
+        cur = conn.execute(
+            "UPDATE live_sessions SET stopped_at=? WHERE id=? AND state='live'"
+            " AND delete_asked_at IS NULL", (None if on else utcnow(), session_id))
+        if cur.rowcount and not on:
+            _cancel_jobs(conn, session_id, "stream turned off")
+    if cur.rowcount and on:
+        queue_chunks(conn, session_id)
+    return bool(cur.rowcount)
+
+
+def delete_recording(conn: sqlite3.Connection, session_id: int) -> bool:
+    """Delete a stream's recording from the laptop the next time it checks in. Not while it's
+    recording. Clips already made stay."""
+    with tx(conn):
+        cur = conn.execute(
+            "UPDATE live_sessions SET delete_asked_at=? WHERE id=? AND purged_at IS NULL"
+            " AND delete_asked_at IS NULL AND (state='ended' OR stopped_at IS NOT NULL)",
+            (utcnow(), session_id))
+        if cur.rowcount:
+            _cancel_jobs(conn, session_id, "recording deleted")
+            # Never recorded anywhere: nothing to delete.
+            conn.execute("UPDATE live_sessions SET purged_at=? WHERE id=? AND host IS NULL",
+                         (utcnow(), session_id))
+    return bool(cur.rowcount)
+
+
 def for_recorder(conn: sqlite3.Connection, host: str) -> dict:
     """What the laptop's recorder should do: record live sessions (claiming unclaimed ones),
     finish ended ones it recorded, delete old recordings nothing needs any more."""
@@ -299,19 +351,19 @@ def for_recorder(conn: sqlite3.Connection, host: str) -> dict:
         conn.execute("UPDATE live_sessions SET host=? WHERE host IS NULL AND state='live'",
                      (host,))
         rows = conn.execute(
-            "SELECT id, channel, dir, name, state FROM live_sessions WHERE host=? AND"
-            " (state='live' OR finalized_at IS NULL) ORDER BY id", (host,)).fetchall()
+            "SELECT id, channel, dir, name, state, stopped_at FROM live_sessions WHERE host=? AND"
+            " (state='live' OR finalized_at IS NULL) AND delete_asked_at IS NULL ORDER BY id",
+            (host,)).fetchall()
         old = conn.execute(
-            """SELECT id, dir FROM live_sessions ls WHERE host=? AND purged_at IS NULL
-                 AND finalized_at IS NOT NULL AND ended_at < ?
-                 AND NOT EXISTS (SELECT 1 FROM live_chunks k JOIN sources src
-                                 ON src.id=k.source_id WHERE k.session_id=ls.id
-                                 AND src.status NOT IN ('rendered','failed'))""",
+            f"""SELECT id, dir FROM live_sessions ls WHERE host=? AND purged_at IS NULL
+                 AND (delete_asked_at IS NOT NULL OR (finalized_at IS NOT NULL AND ended_at < ?
+                      AND NOT EXISTS ({WAITING_JOBS}) AND NOT EXISTS ({WAITING_CLIPS})))""",
             (host, utc_in(-s.live_keep_hours * 3600))).fetchall()
         for r in old:
             conn.execute("UPDATE live_sessions SET purged_at=? WHERE id=?", (utcnow(), r["id"]))
     return {"sessions": [{"id": r["id"], "url": channel_url(r["channel"]), "dir": r["dir"],
-                          "name": r["name"], "live": r["state"] == "live"} for r in rows],
+                          "name": r["name"],
+                          "live": r["state"] == "live" and not r["stopped_at"]} for r in rows],
             "purge": [r["dir"] for r in old], "piece_s": PIECE_S,
             "chunk_s": s.live_chunk_min * 60, "overlap_s": OVERLAP_S,
             "max_height": s.max_download_height}

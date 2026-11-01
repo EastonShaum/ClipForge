@@ -51,7 +51,7 @@
 
 <h2>System</h2>
 <div class="card small">
-  <div>Disk free: {{ health.disk_free_gb }} GB · raw media: {{ health.raw_media_gb }} GB</div>
+  <div>Disk free: {{ health.disk_free_gb }} GB · raw media: {{ health.raw_media_gb }} GB · <a href="/files">Files and auto-delete</a></div>
   <div>Laptop worker: {{ 'online' if health.remote_worker_online else 'offline' }}</div>
   <div class="scroll"><table>
     <tr><th>Stage</th><th class="n">Queued</th><th class="n">Running</th><th class="n">Done</th><th class="n">Dead</th></tr>

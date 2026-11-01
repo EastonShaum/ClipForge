@@ -298,4 +298,4 @@ def test_a_gaming_streamer_can_be_set_to_full_width(client, conn):
                                                 "watch_live": "true",
                                                 "live_layout": "blurfill"})
     assert build_context(conn, get_settings(), job)["layout"] == "blurfill"
-    assert 'value="blurfill" selected' in client.get("/lives").text
+    assert 'value="blurfill" selected' in client.get("/lives?tab=streamers").text

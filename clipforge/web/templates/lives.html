@@ -2,17 +2,15 @@
 {% block title %}Lives · ClipForge{% endblock %}
 {% block content %}
 <h1>Lives</h1>
-<p class="lede">Clipped every few minutes while they stream. Each stream keeps its own clips; if a bounty comes up, move the stream into it.</p>
+<div class="tabs" role="navigation" aria-label="Lives">
+  <a href="/lives" class="{{ 'on' if tab == 'streams' }}" {{ 'aria-current=page' if tab == 'streams' }}>Streams</a>
+  <a href="/lives?tab=streamers" class="{{ 'on' if tab == 'streamers' }}" {{ 'aria-current=page' if tab == 'streamers' }}>Streamers <span class="count">{{ streamers|length }}</span></a>
+  <a href="/files">Files</a>
+</div>
 
-<h2>Streams</h2>
-{% for ls in sessions %}
+{% macro body(ls) %}
 {% set base = "/campaigns/" ~ ls.bounty_cid ~ "/bounties/" ~ ls.bounty_id %}
-<section class="card" id="live{{ ls.id }}">
-  <div class="row">
-    {% if ls.state == 'live' %}<span class="chip live">● live</span>{% else %}<span class="chip">ended</span>{% endif %}
-    <strong>{{ ls.streamer }}</strong>
-    <span class="small">{{ ls.started_at[5:16].replace('T', ' ') }} UTC{% if ls.title %} · “{{ ls.title[:70] }}”{% endif %}</span>
-  </div>
+  {% if ls.title %}<div class="small">“{{ ls.title[:90] }}”</div>{% endif %}
   <div class="small muted">{{ ls.channel }} · {{ ls.recorded_s|hm }} recorded{% if ls.bytes %} ({{ "%.1f"|format(ls.bytes / 1e9) }} GB){% endif %} · {{ ls.chunks }} chunk(s){% if ls.queued %}, {{ ls.queued }} clipped{% endif %}
     {% if ls.state == 'live' and not ls.host %} · <span class="status-failed">not recording: laptop worker offline</span>
     {% elif ls.state == 'live' and ls.rec_error and not ls.recording %} · <span class="status-failed">{{ ls.rec_error[:120] }}</span>{% endif %}
@@ -48,18 +46,50 @@
   </form>
   {% endif %}
   {% endif %}
+{% endmacro %}
+
+{% if tab == 'streams' %}
+<p class="lede">Clipped every few minutes while they stream. Each stream keeps its own clips; if a bounty comes up, move the stream into it.</p>
+{% set now = sessions|selectattr('state', 'equalto', 'live')|list %}
+{% for ls in now %}
+<section class="card" id="live{{ ls.id }}">
+  <div class="row">
+    {% if ls.stopped_at %}<span class="chip">off</span>{% else %}<span class="chip live">● live</span>{% endif %}
+    <strong>{{ ls.streamer }}</strong>
+    <span class="small">started {{ ls.started_at|local }}</span>
+  </div>
+  <form method="post" action="/lives/{{ ls.id }}/recording" class="switch" aria-label="Record and clip this stream">
+    <span class="small">Record &amp; clip</span>
+    <label><input type="radio" name="on" value="1" {{ 'checked' if not ls.stopped_at }}
+      onchange="this.form.submit()"> On</label>
+    <label><input type="radio" name="on" value="0" {{ 'checked' if ls.stopped_at }}
+      onchange="confirm('Stop recording and clipping {{ ls.streamer }}? Clips already made stay.') ? this.form.submit() : this.form.reset()"> Off</label>
+  </form>
+  {% if ls.stopped_at %}<div class="small muted">Off since {{ ls.stopped_at|local('t') }}. Not recording, no new clips.</div>{% endif %}
+  {{ body(ls) }}
 </section>
-{% else %}
-<div class="small muted">No streams recorded yet.</div>
 {% endfor %}
 
-<h2>Streamers</h2>
+{% set ended = sessions|rejectattr('state', 'equalto', 'live')|list %}
+{% if ended %}<h2>Ended</h2>{% endif %}
+{% for ls in ended %}
+<details class="card stream" id="live{{ ls.id }}">
+  <summary>
+    <strong>{{ ls.streamer }}</strong>
+    <span class="small muted">{{ ls.started_at|local('day') }} · {{ ls.started_at|local('t') }} – {{ ls.ended_at|local('t') }}</span>
+  </summary>
+  {{ body(ls) }}
+</details>
+{% endfor %}
+{% if not sessions %}<div class="small muted">No streams recorded yet.</div>{% endif %}
+
+{% else %}
 {% for c in streamers %}
 <section class="card">
   <strong>{{ c.name }}</strong>
   {% for ch, url, st in c.channels %}
   <div class="row small"><a href="{{ url }}" target="_blank" rel="noopener">{{ ch }}</a>
-    {% if st %}<span class="{{ 'chip live' if st.state == 'live' else 'status-failed' if st.state not in ('offline',) else 'muted' }}">{{ st.state }}</span><span class="muted">checked {{ st.at[11:16] }} UTC</span>{% else %}<span class="muted">not checked yet</span>{% endif %}</div>
+    {% if st %}<span class="{{ 'chip live' if st.state == 'live' else 'status-failed' if st.state not in ('offline',) else 'muted' }}">{{ st.state }}</span><span class="muted">checked {{ st.at|local('t') }}</span>{% else %}<span class="muted">not checked yet</span>{% endif %}</div>
   {% endfor %}
   <form method="post" action="/campaigns/{{ c.id }}/live" class="grid2">
     <label>Kick / Twitch channels <input name="live_channels" value="{{ c.live_channels }}" placeholder="kick.com/n3on twitch.tv/n3on"></label>
@@ -82,4 +112,5 @@
     <button class="go small">Watch</button>
   </form>
 </section>
+{% endif %}
 {% endblock %}

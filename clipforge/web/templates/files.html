@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Files · ClipForge{% endblock %}
+{% block content %}
+<h1>Files</h1>
+<p class="lede">Everything ClipForge saved, when it goes away on its own, and a button to delete it now. Your own footage in the Campaigns folders is never touched.</p>
+
+<div class="card">
+  <h2>What deletes itself</h2>
+  <ul class="small rules">
+    <li><strong>Stream recordings</strong> (laptop): {{ s.live_keep_hours // 24 if s.live_keep_hours % 24 == 0 else s.live_keep_hours }} {{ 'days' if s.live_keep_hours % 24 == 0 else 'h' }} after the stream ends, once its chunks are clipped.</li>
+    <li><strong>Downloaded videos</strong> (Pi, from a link): {{ s.raw_retention_hours }} h after their clips are made.</li>
+    <li><strong>Clip videos</strong> (Pi): kept until you delete them below.</li>
+    <li><strong>Campaigns folders</strong> (your footage): never.</li>
+  </ul>
+  <div class="small muted">Pi disk: {{ disk.free|gb }} free of {{ disk.total|gb }}.</div>
+</div>
+
+<h2>Stream recordings <span class="small muted">on the laptop · {{ recs|sum(attribute='bytes')|gb }}</span></h2>
+{% for r in recs %}
+<section class="card" id="rec{{ r.id }}">
+  <div class="row">
+    {% if r.state == 'live' %}<span class="chip {{ '' if r.stopped_at else 'live' }}">{{ 'off' if r.stopped_at else '● live' }}</span>{% endif %}
+    <strong>{{ r.streamer }}</strong>
+    <span class="small muted">{{ r.started_at|local('day') }} · {{ r.started_at|local('t') }}{% if r.ended_at %} – {{ r.ended_at|local('t') }}{% endif %}</span>
+    <span class="num" style="margin-left:auto">{{ r.bytes|gb }}</span>
+  </div>
+  <div class="small mono clamp">{{ r.path }}</div>
+  <div class="small">{% if r.when %}Deletes {{ r.when|local }}. {% endif %}{{ r.note }}</div>
+  {% if r.can_delete %}
+  <form method="post" action="/files/recordings/{{ r.id }}/delete"
+        data-confirm="Delete {{ r.streamer }}'s {{ r.started_at|local('d') }} recording ({{ r.bytes|gb }}) from the laptop? Clips already made stay.">
+    <button class="small danger">Delete now</button>
+  </form>
+  {% endif %}
+</section>
+{% else %}
+<div class="small muted">No recordings on the laptop.</div>
+{% endfor %}
+{% if purged %}<div class="small muted">{{ purged }} older recording{{ 's' if purged != 1 }} already deleted.</div>{% endif %}
+
+<h2>Downloaded videos <span class="small muted">on the Pi · {{ downloads|sum(attribute='bytes')|gb }}</span></h2>
+{% for d in downloads %}
+<section class="card">
+  <div class="row"><strong class="clamp" style="flex:1">{{ d.title or d.url }}</strong><span class="num">{{ d.bytes|gb }}</span></div>
+  <div class="small mono clamp">{{ d.path }}</div>
+  <div class="small">{% if d.when %}Deletes {{ d.when|local }}.{% endif %} {{ d.note }}</div>
+  {% if d.can_delete %}
+  <form method="post" action="/files/downloads/{{ d.id }}/delete" data-confirm="Delete this downloaded video ({{ d.bytes|gb }})? Its clips stay.">
+    <button class="small danger">Delete now</button>
+  </form>
+  {% endif %}
+</section>
+{% else %}
+<div class="small muted">None. Footage from your Campaigns folders is clipped where it is, not copied.</div>
+{% endfor %}
+
+<h2>Clip videos <span class="small muted">on the Pi · {{ clips|sum(attribute='bytes')|gb }}</span></h2>
+{% for g in clips %}
+<section class="card">
+  <div class="row">
+    <a href="/campaigns/{{ g.cid }}/bounties/{{ g.bid }}"><strong>{{ g.campaign }} {{ g.name if g.live_session_id else '· ' ~ g.name }}</strong></a>
+    <span class="num" style="margin-left:auto">{{ g.bytes|gb }}</span>
+  </div>
+  <div class="small muted">
+    {% for st, label in (('in_review', 'to review'), ('approved', 'to post'), ('posted', 'posted'), ('rejected', 'rejected')) %}{% if g.stages[st] %}<span>{{ g.stages[st].n }} {{ label }}</span>{% if not loop.last %} · {% endif %}{% endif %}{% endfor %}
+  </div>
+  <div class="row">
+    {% for st, label in groups.items() %}{% if g.stages[st] %}
+    <form method="post" action="/files/clips/delete"
+          data-confirm="Delete the videos of {{ g.stages[st].n }} {{ label|lower }} clip(s) ({{ g.stages[st].bytes|gb }})? {{ 'Their posts and views stay.' if st == 'posted' else 'Your reject reasons stay.' }}">
+      <input type="hidden" name="bounty_id" value="{{ g.bid }}"><input type="hidden" name="status" value="{{ st }}">
+      <button class="small danger">Delete {{ label|lower }} videos ({{ g.stages[st].bytes|gb }})</button>
+    </form>
+    {% endif %}{% endfor %}
+  </div>
+</section>
+{% else %}
+<div class="small muted">No clip videos.</div>
+{% endfor %}
+{% endblock %}

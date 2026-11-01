@@ -5,9 +5,11 @@ import logging
 import shutil
 import sqlite3
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 from urllib.parse import quote
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -29,6 +31,7 @@ from clipforge import (
     notify,
     pipeline,
     scout,
+    storage,
     tiktok,
 )
 from clipforge.bounties import (
@@ -70,6 +73,23 @@ templates.env.filters["logos"] = logo_list
 templates.env.filters["pct"] = lambda v: "—" if v is None else f"{v * 100:.0f}%"
 templates.env.filters["secs"] = lambda ms: f"{(ms or 0) / 1000:.0f}s"
 templates.env.filters["hm"] = lambda sec: f"{int(sec or 0) // 3600}h{int(sec or 0) % 3600 // 60:02d}"
+
+
+def local_time(iso: str | None, style: str = "dt") -> str:
+    """A stored UTC time in Easton's time zone (MDT/MST): "Oct 31, 5:03 PM" (dt), "5:03 PM"
+    (t), "Oct 31" (d) or "Sat Oct 31" (day)."""
+    if not iso:
+        return ""
+    t = datetime.strptime(iso[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=UTC).astimezone(
+        ZoneInfo(get_settings().timezone))
+    clock = f"{t.hour % 12 or 12}:{t:%M} {t:%p}"
+    return {"t": clock, "d": f"{t:%b} {t.day}", "day": f"{t:%a %b} {t.day}"}.get(
+        style, f"{t:%b} {t.day}, {clock}")
+
+
+templates.env.filters["local"] = local_time
+templates.env.filters["gb"] = lambda b: f"{(b or 0) / 1e9:.1f} GB" if (b or 0) >= 1e8 \
+    else f"{(b or 0) / 1e6:.0f} MB"
 templates.env.filters["mmss"] = lambda ms: f"{(ms or 0) // 60000}:{(ms or 0) // 1000 % 60:02d}"
 
 PLATFORMS = ["tiktok", "youtube", "instagram", "x"]
@@ -177,7 +197,7 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
     # Live streams (D34): their own tab, apart from campaigns. Each stream's clips have their
     # own Review / Post / Posted tabs until Easton moves the stream into a paid bounty.
     @app.get("/lives")
-    def lives(request: Request, conn: DB, msg: str = ""):
+    def lives(request: Request, conn: DB, msg: str = "", tab: str = "streams"):
         streamers = []
         for c in live.watched(conn) + [r for r in conn.execute(
                 "SELECT * FROM campaigns WHERE status='active' AND watch_live=0"
@@ -189,14 +209,50 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         for ls in sessions:
             ls["tl"] = live.timeline(conn, ls)
         return page(request, "lives.html", streamers=streamers, sessions=sessions,
+                    tab="streamers" if tab == "streamers" else "streams",
                     paid=bounties.paid_bounties(conn), live_dir=s.live_dir.name, msg=msg,
                     every=s.live_check_s // 60)
+
+    @app.post("/lives/{session_id}/recording")
+    def lives_recording(session_id: int, conn: DB, on: str = Form(...)):
+        turn_on = on == "1"
+        if not live.set_recording(conn, session_id, turn_on):
+            return back("/lives", "That stream isn't live any more")
+        return back(f"/lives#live{session_id}", "Recording and clipping again" if turn_on else
+                    "Stopped: not recording or clipping this stream. Clips already made stay.")
+
+    @app.get("/files")
+    def files(request: Request, conn: DB, msg: str = ""):
+        return page(request, "files.html", recs=storage.recordings(conn, s),
+                    downloads=storage.downloads(conn, s), clips=storage.clip_files(conn, s),
+                    groups=storage.CLIP_GROUPS, disk=storage.disk(s), s=s, msg=msg,
+                    purged=conn.execute("SELECT COUNT(*) FROM live_sessions"
+                                        " WHERE purged_at IS NOT NULL").fetchone()[0])
+
+    @app.post("/files/recordings/{session_id}/delete")
+    def files_delete_recording(session_id: int, conn: DB):
+        ok = live.delete_recording(conn, session_id)
+        return back("/files", "Deleting it the next time the laptop checks in" if ok
+                    else "Can't delete a stream while it's recording: turn it off first")
+
+    @app.post("/files/downloads/{source_id}/delete")
+    def files_delete_download(source_id: int, conn: DB):
+        freed = storage.delete_download(conn, s, source_id)
+        return back("/files", f"Deleted, freed {freed / 1e6:.0f} MB" if freed
+                    else "Nothing to delete")
+
+    @app.post("/files/clips/delete")
+    def files_delete_clips(conn: DB, bounty_id: int = Form(...), status: str = Form(...)):
+        if status not in storage.CLIP_GROUPS:
+            raise HTTPException(400, "bad status")
+        n, freed = storage.delete_clip_files(conn, s, bounty_id, status)
+        return back("/files", f"Deleted {n} video(s), freed {freed / 1e6:.0f} MB")
 
     @app.post("/lives/watch")
     def lives_watch(conn: DB, name: str = Form(...), live_channels: str = Form("")):
         chans, bad = live.parse_channels(live_channels)
         if bad:
-            return back("/lives", f"Not a Kick or Twitch channel: {' '.join(bad)}"
+            return back("/lives?tab=streamers", f"Not a Kick or Twitch channel: {' '.join(bad)}"
                         " (use e.g. kick.com/n3on)")
         name = " ".join(name.split())
         row = conn.execute("SELECT id FROM campaigns WHERE lower(name)=lower(?)",
@@ -208,8 +264,8 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
                              " THEN live_channels ELSE ? END WHERE id=?",
                              (" ".join(chans), " ".join(chans), cid))
         except ValueError as e:
-            return back("/lives", str(e).split("\n")[0][:200])
-        return back("/lives", f"Watching {name}. Channels are checked every"
+            return back("/lives?tab=streamers", str(e).split("\n")[0][:200])
+        return back("/lives?tab=streamers", f"Watching {name}. Channels are checked every"
                     f" {s.live_check_s // 60} min.")
 
     @app.post("/lives/{session_id}/bounty")
@@ -442,7 +498,7 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
     @app.post("/clips/{clip_id}/unreview")
     def unreview(clip_id: int, conn: DB, next: str = Form("")):
         conn.execute("UPDATE clips SET status='in_review' WHERE id=? AND status IN"
-                     " ('approved','rejected')", (clip_id,))
+                     " ('approved','rejected') AND file_deleted_at IS NULL", (clip_id,))
         return back(_next(next, "/review"), "Moved back to review")
 
     @app.post("/posts/{post_id}/views")
@@ -645,12 +701,12 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         _camp_or_404(conn, cid)
         chans, bad = live.parse_channels(live_channels)
         if bad:
-            return back("/lives", f"Not a Kick or Twitch channel:"
+            return back("/lives?tab=streamers", f"Not a Kick or Twitch channel:"
                         f" {' '.join(bad)} (use e.g. kick.com/n3on)")
         conn.execute("UPDATE campaigns SET live_channels=?, watch_live=?, live_layout=? WHERE id=?",
                      (" ".join(chans), int(watch_live),
                       live_layout if live_layout in ("blurfill", "crop") else None, cid))
-        return back("/lives", "Saved. Channels are checked every"
+        return back("/lives?tab=streamers", "Saved. Channels are checked every"
                     f" {s.live_check_s // 60} min.")
 
     @app.post("/campaigns/{cid}/bounties/{bid}/status")

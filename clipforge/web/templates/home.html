@@ -38,9 +38,10 @@
 <h2>Live now</h2>
 {% for ls in streams %}
 <div class="card">
-  <div class="row"><span class="chip live">● live</span><strong>{{ ls.streamer }}</strong>
+  <div class="row">{% if ls.stopped_at %}<span class="chip">off</span>{% else %}<span class="chip live">● live</span>{% endif %}<strong>{{ ls.streamer }}</strong>
     <span class="muted small">recording {{ ls.recorded_s|hm }}</span></div>
-  {% if ls.blocked %}<div class="small status-failed">Not clipped: the title looks like gambling.</div>
+  {% if ls.stopped_at %}<div class="small muted">Recording and clipping turned off.</div>
+  {% elif ls.blocked %}<div class="small status-failed">Not clipped: the title looks like gambling.</div>
   {% elif ls.own %}<div class="small muted">No bounty yet. Clips stay with this stream until you pick one.</div>
   {% else %}<div class="small muted">Clips go to {{ ls.bounty_campaign }}, {{ ls.bounty }}.</div>{% endif %}
   <a class="btn small" style="justify-self:start" href="/lives#live{{ ls.id }}">Open stream</a>

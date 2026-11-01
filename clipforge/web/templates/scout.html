@@ -34,7 +34,7 @@
   {% if b.why %}<div class="small" style="color:var(--warn)">{{ b.why|join(' · ') }}</div>{% endif %}
   {% if b.notes %}<div class="small muted">{{ b.notes }}</div>{% endif %}
   <div class="row small">
-    <span class="muted">seen {{ b.seen_at[:10] }}</span>
+    <span class="muted">seen {{ b.seen_at|local('d') }}</span>
     {% set add = "/campaigns?name=" ~ b.campaign|urlencode ~ "&bounty_name=" ~ (b.bounty or 'main')|urlencode ~ "&category=" ~ (b.category if b.category in ['podcast','interview','gaming','streamer'] else 'other') ~ ("&rate_usd=" ~ b.rate_usd ~ "&rate_mode=" ~ b.rate_per_views if b.kind == 'rate' and b.rate_usd is not none else "") ~ "&notes=" ~ ('from Scout, payout ' ~ b.payout)|urlencode %}
     <a class="btn small" href="{{ add }}#add">Add as bounty</a>
     <a class="btn small" href="{{ add }}&live=1#add">Add &amp; clip live</a>
@@ -60,7 +60,7 @@
   {% for sh in shots %}
   <div class="row small">
     <a href="/media/assets/{{ sh.path }}" target="_blank" rel="noopener"><img src="/media/assets/{{ sh.path }}" alt="screenshot {{ sh.id }}" class="logo-thumb"></a>
-    <span>{{ sh.created_at[:16]|replace('T', ' ') }} UTC · {{ sh.n }} bounties ·
+    <span>{{ sh.created_at|local }} · {{ sh.n }} bounties ·
       {% if sh.state == 'done' %}read{% elif sh.state in ('queued','running') %}reading…{% else %}<span class="status-failed">{{ sh.state }}</span>{% endif %}</span>
     {% if sh.last_error and sh.state != 'done' %}<span class="muted">{{ sh.last_error[:120] }}</span>{% endif %}
     <form method="post" action="/scout/shots/{{ sh.id }}/delete"><button class="small">Delete</button></form>
