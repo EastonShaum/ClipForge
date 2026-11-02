@@ -5,6 +5,7 @@ import sqlite3
 
 from clipforge.analytics import post_rows
 from clipforge.bounties import label
+from clipforge.config import get_settings
 from clipforge.db import utc_in
 
 STALE_VIEWS_S = 24 * 3600  # a post whose views weren't logged in a day
@@ -55,10 +56,20 @@ def needs_you(conn: sqlite3.Connection) -> dict:
 
 def progress(conn: sqlite3.Connection, bounty: dict) -> dict:
     """A bounty's views against its payout line: the best clip's views, all views, posts and
-    the estimated pay (analytics.post_rows)."""
+    the estimated pay (analytics.post_rows). Plus its budget: low (under budget_low_ratio of
+    the total) and whether posts waiting for the brand's approval could use up what's left."""
     posts = [p for p in post_rows(conn) if p["bounty_id"] == bounty["id"]]
     best = max((p["views"] for p in posts), default=0)
     line = bounty.get("min_views") or 0
+    left, total = bounty.get("budget_remaining_usd"), bounty.get("budget_total_usd")
+    pending = sum(p["earn"] for p in posts if p["review_status"] in (None, "pending"))
+    warn = ""
+    if left is not None and pending > left:
+        warn = (f"Posts waiting for approval could earn {pending:,.2f} dollars, more than the"
+                " budget left: submit soon, or pick another bounty.")
     return {"posts": len(posts), "views": sum(p["views"] for p in posts), "best": best,
             "line": line, "pct": min(100.0, best * 100 / line) if line else None,
-            "earn": sum(p["earn"] for p in posts)}
+            "earn": sum(p["earn"] for p in posts), "pending": pending,
+            "budget_low": bool(left is not None and total
+                               and left < total * get_settings().budget_low_ratio),
+            "budget_warn": warn}

@@ -44,6 +44,7 @@ def campaign_id(conn):
     from clipforge.campaigns import CampaignIn, add_campaign
 
     cid = add_campaign(conn, CampaignIn(name="Test Pod", category="podcast",
+                                        marketplace="clipping_net",
                                         required_tags="@testpod #testcampaign"))
     add_bounty(conn, cid, BountyIn(name="main", rate_usd=40, rate_per_views=100_000,
                                    min_views=10_000, cap_usd=100))

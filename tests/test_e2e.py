@@ -11,6 +11,7 @@ FIXTURE = Path(__file__).parent / "fixtures" / "sample.mp4"
 
 def test_full_loop(client, conn, settings):
     r = client.post("/campaigns", data={"name": "E2E Pod", "category": "podcast",
+                                        "marketplace": "clipping_net",
                                         "rate_usd": "40", "rate_mode": "100000",
                                         "min_views": "1000", "required_tags": "@e2e"})
     assert r.status_code == 200 and "Campaign #1 added" in r.text

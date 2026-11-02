@@ -3,15 +3,21 @@
 <div class="crumbs"><a href="/lives">Lives</a></div>
 <h1>{{ c.name }} {{ b.name }}</h1>
 {% else %}
-<div class="crumbs"><a href="/campaigns">Campaigns</a> › <a href="/campaigns/{{ c.id }}">{{ c.name }}</a></div>
+<div class="crumbs"><a href="/campaigns">Campaigns</a> › <a href="/campaigns/{{ c.id }}">{{ c.name }}</a>
+  <span class="chip mk-{{ c.marketplace }}">{{ marketplaces[c.marketplace] }}</span></div>
 <h1>{{ b.name }}</h1>
+{% if b.budget_remaining_usd is not none %}
+<div class="budget{{ ' low' if prog.budget_low }}"><span class="num">{{ b.budget_remaining_usd|money }}</span>
+  <span class="small">budget left{% if b.budget_total_usd %} of {{ b.budget_total_usd|money }}{% endif %}{% if b.budget_checked_at %}, checked {{ b.budget_checked_at|local('d') }}{% endif %}</span>
+  {% if prog.budget_warn %}<div class="small status-failed">{{ prog.budget_warn }}</div>{% endif %}</div>
+{% endif %}
 {% if prog %}
 <div class="payout">
   {% if prog.line %}
   <div class="row"><span class="num">{{ prog.best|num }}</span><span class="small muted">of {{ prog.line|num }} views on the best clip, the payout line</span></div>
   <div class="bar"><i style="width: {{ prog.pct }}%"></i></div>
   {% endif %}
-  <div class="small muted">${{ "%.0f"|format(b.rate_usd) }} per {{ b.rate_per_views|num }} views · {{ prog.posts }} post{{ 's' if prog.posts != 1 }}, {{ prog.views|num }} views{% if prog.earn %} · about {{ prog.earn|money }} earned{% endif %}</div>
+  <div class="small muted">{% include "_rate.html" %} · {{ prog.posts }} post{{ 's' if prog.posts != 1 }}, {{ prog.views|num }} views{% if prog.earn %} · about {{ prog.earn|money }} earned{% endif %}</div>
 </div>
 {% endif %}
 {% endif %}

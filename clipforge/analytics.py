@@ -6,7 +6,8 @@ from clipforge.bounties import label
 from clipforge.campaigns import effective_per_1k, estimate_payout
 
 POST_VIEWS = """
-    SELECT p.id post_id, p.platform, p.clip_id, c.id cand_id, c.hook_type, c.prompt_version_id,
+    SELECT p.id post_id, p.platform, p.clip_id, p.account_id, p.review_status, p.earned_usd,
+           p.submitted_at, p.approved_at, p.paid_at, c.id cand_id, c.hook_type, c.prompt_version_id,
            s.campaign_id, s.bounty_id, COALESCE(MAX(v.views), 0) views
     FROM posts p JOIN clips k ON k.id=p.clip_id JOIN candidates c ON c.id=k.candidate_id
     JOIN sources s ON s.id=c.source_id LEFT JOIN view_snapshots v ON v.post_id=p.id
@@ -16,7 +17,7 @@ POST_VIEWS = """
 
 def _bounties(conn: sqlite3.Connection) -> dict[int, dict]:
     out = {}
-    for r in conn.execute("SELECT b.*, c.name campaign FROM bounties b"
+    for r in conn.execute("SELECT b.*, c.name campaign, c.marketplace FROM bounties b"
                           " JOIN campaigns c ON c.id=b.campaign_id"):
         d = dict(r)
         d["per_1k"] = effective_per_1k(d["rate_usd"], d["rate_per_views"])

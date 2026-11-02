@@ -17,7 +17,9 @@ from clipforge.tools import ffmpeg
 
 class CampaignIn(BaseModel):
     name: str
-    platform: str = "clipping.net"
+    platform: str = ""  # replaced by marketplace (D38); kept for old rows
+    marketplace: str = "content_rewards"  # content_rewards | clipping_net | other
+    payer_type: str | None = None  # who pays for a streamer's clips; "none" = don't record
     category: str = ""
     rate_usd: float = 0.0
     rate_per_views: int = 1000
@@ -42,9 +44,14 @@ def effective_per_1k(rate_usd: float, rate_per_views: int) -> float:
 
 
 def blocked_reason(c: CampaignIn) -> str | None:
-    for cat in get_settings().blocked_categories:
+    s = get_settings()
+    for cat in s.blocked_categories:
         if cat.lower() in c.category.lower():
             return f"blocked category: {cat}"
+    for cat in s.terms_needed_categories:
+        if cat.lower() in c.category.lower():
+            return (f"{cat} campaign: add it only if the brief names the sponsor and its"
+                    " disclosure terms")
     return blocked_text(" ".join([c.name, c.category, c.notes, c.source_links]))
 
 
@@ -145,13 +152,9 @@ def remove_logo(conn: sqlite3.Connection, campaign_id: int, rel: str | None = No
 
 
 def estimate_payout(bounty: dict, views: int) -> float:
-    """Payout for one clip under a bounty (or anything with per_1k, min_views, cap_usd): zero
-    below the threshold, linear above, clipped at the cap."""
-    if views < (bounty.get("min_views") or 0):
-        return 0.0
-    pay = views / 1000 * bounty["per_1k"]
-    cap = bounty.get("cap_usd")
-    return min(pay, cap) if cap else pay
+    """One clip's pay after the marketplace fee (money.payout: minimum, cap, bonus, type)."""
+    from clipforge.money import payout
+    return payout(bounty, views)
 
 
 def _purge(conn: sqlite3.Connection, sids: list[int], doc_ids: list[int]) -> dict:

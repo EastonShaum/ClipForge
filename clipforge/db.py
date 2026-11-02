@@ -72,7 +72,57 @@ ADDED_COLUMNS = [("campaigns", "logo_path", "TEXT"), ("posts", "submitted_at", "
                  ("campaigns", "live_layout", "TEXT"),
                  ("live_sessions", "stopped_at", "TEXT"),
                  ("live_sessions", "delete_asked_at", "TEXT"),
-                 ("clips", "file_deleted_at", "TEXT")]
+                 ("clips", "file_deleted_at", "TEXT"),
+                 # D38: Content Rewards. The marketplace is the campaign's; the money terms are
+                 # the bounty's (a Content Rewards "campaign" is a ClipForge bounty).
+                 ("campaigns", "marketplace", "TEXT NOT NULL DEFAULT 'content_rewards'"),
+                 ("campaigns", "payer_type", "TEXT"),
+                 ("bounties", "campaign_type", "TEXT NOT NULL DEFAULT 'cpm'"),
+                 ("bounties", "min_payout_usd", "REAL"),
+                 ("bounties", "flat_fee_bonus_usd", "REAL"),
+                 ("bounties", "budget_total_usd", "REAL"),
+                 ("bounties", "budget_remaining_usd", "REAL"),
+                 ("bounties", "budget_checked_at", "TEXT"),
+                 ("bounties", "audience_rules", "TEXT NOT NULL DEFAULT ''"),
+                 ("bounties", "footage_scope", "TEXT NOT NULL DEFAULT ''"),
+                 ("bounties", "ai_video_banned", "INTEGER NOT NULL DEFAULT 0"),
+                 ("bounties", "onscreen_ad_label_required", "INTEGER NOT NULL DEFAULT 0"),
+                 ("bounties", "brief_url", "TEXT NOT NULL DEFAULT ''"),
+                 ("bounties", "brief_text", "TEXT NOT NULL DEFAULT ''"),
+                 ("bounties", "pays_on", "TEXT NOT NULL DEFAULT 'unknown'"),
+                 ("bounties", "layout", "TEXT"),
+                 ("bounties", "facecam", "TEXT"),
+                 ("posts", "account_id", "INTEGER"),
+                 ("posts", "review_status", "TEXT"),
+                 ("posts", "reject_reason", "TEXT"),
+                 ("posts", "approved_views", "INTEGER"),
+                 ("posts", "earned_usd", "REAL"),
+                 ("posts", "approved_at", "TEXT"),
+                 ("posts", "paid_at", "TEXT"),
+                 ("view_snapshots", "engaged_views", "INTEGER"),
+                 ("scout_bounties", "marketplace", "TEXT NOT NULL DEFAULT ''"),
+                 ("scout_bounties", "campaign_type", "TEXT NOT NULL DEFAULT ''"),
+                 ("scout_bounties", "min_payout_usd", "REAL"),
+                 ("scout_bounties", "max_payout_usd", "REAL"),
+                 ("scout_bounties", "bonus_usd", "REAL"),
+                 ("scout_bounties", "budget_total_usd", "REAL"),
+                 ("scout_bounties", "budget_remaining_usd", "REAL"),
+                 ("scout_bounties", "end_date", "TEXT"),
+                 ("scout_bounties", "platforms", "TEXT NOT NULL DEFAULT ''"),
+                 ("scout_bounties", "footage_scope", "TEXT NOT NULL DEFAULT ''")]
+
+# One-time (D38): campaigns made before the marketplace field keep their marketplace (all of
+# them were Clipping.net); posts already submitted wait for the brand's review.
+MARKETPLACE_MIGRATION = """
+UPDATE campaigns SET marketplace = CASE
+    WHEN lower(platform) LIKE 'clipping%' THEN 'clipping_net'
+    WHEN lower(replace(platform, ' ', '')) IN ('contentrewards', 'content_rewards', 'whop')
+        THEN 'content_rewards'
+    ELSE 'other' END;
+UPDATE posts SET review_status = 'pending' WHERE submitted_at IS NOT NULL AND review_status IS NULL;
+INSERT INTO settings_kv (key, value)
+    VALUES ('migrated:marketplace', strftime('%Y-%m-%dT%H:%M:%SZ','now'));
+"""
 
 # One-time: campaigns made before bounties existed become a campaign with one bounty that
 # carries their rate, end date and folder; their sources and brief screenshots move to it.
@@ -101,3 +151,12 @@ def init_db(path: Path | None = None) -> None:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
         if not conn.execute("SELECT 1 FROM settings_kv WHERE key='migrated:bounties'").fetchone():
             conn.executescript("BEGIN;" + BOUNTY_MIGRATION + "COMMIT;")
+        if not conn.execute("SELECT 1 FROM settings_kv WHERE key='migrated:marketplace'"
+                            ).fetchone():
+            script = MARKETPLACE_MIGRATION
+            if "platform" not in {r["name"] for r in conn.execute("PRAGMA table_info(campaigns)")}:
+                # Older than the platform column: every campaign then was Clipping.net.
+                script = script.replace(script[script.index("UPDATE campaigns"):
+                                               script.index("END;") + 4],
+                                        "UPDATE campaigns SET marketplace = 'clipping_net';")
+            conn.executescript("BEGIN;" + script + "COMMIT;")

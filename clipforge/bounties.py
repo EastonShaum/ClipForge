@@ -9,6 +9,8 @@ from pydantic import BaseModel, Field
 from clipforge import jobqueue
 from clipforge.briefs import merged
 from clipforge.campaigns import effective_per_1k, folder_name, logo_list
+from clipforge.db import utcnow
+from clipforge.money import min_views_for
 
 
 class BountyIn(BaseModel):
@@ -24,6 +26,19 @@ class BountyIn(BaseModel):
     source_links: str = ""
     live_clip: bool = False  # clip the streamer's live streams into this bounty (D30)
     render_hold: bool = False  # pick clips, but render only once the requirements are in
+    # Content Rewards terms (D38). min_payout_usd decides min_views (money.min_views_for).
+    campaign_type: str = "cpm"  # cpm | per_post | retainer | prize_pool
+    min_payout_usd: float | None = None
+    flat_fee_bonus_usd: float | None = None
+    budget_total_usd: float | None = None
+    budget_remaining_usd: float | None = None
+    audience_rules: str = ""  # "50%+ US viewers"
+    footage_scope: str = ""  # "the sponsor segment only"
+    ai_video_banned: bool = False
+    onscreen_ad_label_required: bool = False
+    brief_url: str = ""  # the campaign page, where each clip is submitted
+    brief_text: str = ""
+    pays_on: str = "unknown"  # views | engaged_views | unknown (YouTube)
 
 
 def bounty_folder(campaign: sqlite3.Row | dict, bounty_name: str) -> str:
@@ -46,6 +61,9 @@ def add_bounty(conn: sqlite3.Connection, campaign_id: int, b: BountyIn) -> int:
         raise ValueError(f"{camp['name']} already has a bounty called {name}")
     data = {**b.model_dump(), "name": name, "campaign_id": campaign_id,
             "media_folder": bounty_folder(camp, name)}
+    data["min_views"] = min_views_for(data)
+    if data["budget_remaining_usd"] is not None:
+        data["budget_checked_at"] = utcnow()
     cur = conn.execute(f"INSERT INTO bounties ({','.join(data)}) VALUES"
                        f" ({','.join('?' * len(data))})", tuple(data.values()))
     return cur.lastrowid
@@ -53,7 +71,7 @@ def add_bounty(conn: sqlite3.Connection, campaign_id: int, b: BountyIn) -> int:
 
 def get_bounty(conn: sqlite3.Connection, bounty_id: int) -> dict | None:
     r = conn.execute(
-        "SELECT b.*, c.name campaign, c.required_tags campaign_tags FROM bounties b"
+        "SELECT b.*, c.name campaign, c.required_tags campaign_tags, c.marketplace FROM bounties b"
         " JOIN campaigns c ON c.id=b.campaign_id WHERE b.id=?", (bounty_id,)).fetchone()
     return _with_rate(r) if r else None
 
@@ -75,7 +93,7 @@ def clip_counts(conn: sqlite3.Connection, bounty_id: int) -> dict:
 
 def list_bounties(conn: sqlite3.Connection, campaign_id: int) -> list[dict]:
     rows = conn.execute(
-        f"""SELECT b.*, c.name campaign,
+        f"""SELECT b.*, c.name campaign, c.marketplace,
                   (SELECT COUNT(*) FROM sources s WHERE s.bounty_id=b.id) sources,
                   (SELECT COUNT(*) FROM clips k JOIN candidates ca ON ca.id=k.candidate_id
                    JOIN sources s ON s.id=ca.source_id WHERE s.bounty_id=b.id) clips,

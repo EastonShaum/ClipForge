@@ -283,3 +283,31 @@ CREATE TABLE IF NOT EXISTS tiktok_uploads (
     created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
     updated_at      TEXT
 );
+
+-- Easton's social accounts (D38). Posts belong to one; view percentiles and posting cadence are
+-- per account. One account per niche cluster (podcast/soccer vs streamers).
+CREATE TABLE IF NOT EXISTS accounts (
+    id              INTEGER PRIMARY KEY,
+    platform        TEXT NOT NULL,                          -- tiktok | youtube | instagram | x
+    handle          TEXT NOT NULL,                          -- @name
+    niche           TEXT NOT NULL DEFAULT '',               -- podcast/soccer, streamers...
+    enabled         INTEGER NOT NULL DEFAULT 1,             -- Instagram starts off (repost rule)
+    started_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d','now')),  -- day 1 of warm-up
+    UNIQUE (platform, handle)
+);
+
+-- Minutes Easton spent on a bounty (finding, reviewing, posting, submitting), for $/hour.
+CREATE TABLE IF NOT EXISTS work_log (
+    id              INTEGER PRIMARY KEY,
+    bounty_id       INTEGER NOT NULL REFERENCES bounties(id),
+    minutes         INTEGER NOT NULL,
+    day             TEXT NOT NULL,                          -- local date, YYYY-MM-DD
+    note            TEXT NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+
+-- Discord pings that must go out once (a post near its minimum, a low budget...).
+CREATE TABLE IF NOT EXISTS pings (
+    key             TEXT PRIMARY KEY,
+    sent_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);

@@ -2,15 +2,21 @@
 {% block title %}Campaigns · ClipForge{% endblock %}
 {% block content %}
 <h1>Campaigns</h1>
+<div class="tabs" role="navigation" aria-label="Marketplace">
+  <a href="/campaigns" class="{{ 'on' if not market }}">All</a>
+  {% for k, v in marketplaces.items() if k in markets_used %}<a href="/campaigns?m={{ k }}" class="{{ 'on' if market == k }}">{{ v }}</a>{% endfor %}
+</div>
 {% for c in campaigns %}
 <article class="card">
   <a class="camp-link row" href="/campaigns/{{ c.id }}"><h2 style="margin:0">{{ c.name }}</h2>
+    <span class="chip mk-{{ c.marketplace }}">{{ marketplaces[c.marketplace] }}</span>
     {% if c.status != 'active' %}<span class="chip">{{ c.status }}</span>{% endif %}
     <svg class="chev" viewBox="0 0 20 20" aria-hidden="true"><path d="M8 4l6 6-6 6"/></svg>
   </a>
   {% for b in c.bounties %}{% set p = b.prog %}
   <a class="camp-link bounty-row" href="/campaigns/{{ c.id }}/bounties/{{ b.id }}">
-    <span class="row"><strong>{{ b.name }}</strong><span class="small" style="margin-left:auto">${{ "%.0f"|format(b.rate_usd) }} per {{ (b.rate_per_views // 1000)|num }}K</span></span>
+    <span class="row"><strong>{{ b.name }}</strong><span class="small" style="margin-left:auto">{% include "_rate.html" %}</span></span>
+    {% if b.budget_remaining_usd is not none %}<span class="row small"><strong>{{ b.budget_remaining_usd|money }} budget left</strong>{% if b.budget_total_usd %}<span class="muted">of {{ b.budget_total_usd|money }}</span>{% endif %}</span>{% endif %}
     {% if p.line %}
     <span class="row"><span class="num" style="font-size:24px">{{ p.best|num }}</span><span class="small muted">of {{ p.line|num }} views on the best clip</span></span>
     <span class="bar"><i style="width: {{ p.pct }}%"></i></span>
@@ -33,28 +39,26 @@
 <div class="small muted">A campaign is the brand (Man On); a bounty is what pays (episode-4). Adding a bounty to an existing campaign: use the same campaign name, or "Add bounty" on its page.</div>
 <form method="post" action="/campaigns" class="grid2">
   <label>Name <input name="name" required placeholder="e.g. Big Podcast Clips" value="{{ prefill.name or '' }}"></label>
+  <label>Marketplace
+    <select name="marketplace">{% for k, v in marketplaces.items() %}<option value="{{ k }}" {{ 'selected' if (prefill.marketplace or 'content_rewards') == k }}>{{ v }}</option>{% endfor %}</select>
+  </label>
   <label>Category
-    <select name="category">{% for cat in ['podcast','interview','gaming','streamer','other'] %}<option {{ 'selected' if prefill.category == cat }}>{{ cat }}</option>{% endfor %}</select>
+    <select name="category">{% for cat in categories %}<option {{ 'selected' if prefill.category == cat }}>{{ cat }}</option>{% endfor %}</select>
   </label>
-  <label>Marketplace <input name="platform" value="clipping.net"></label>
-  <label>First bounty <input name="bounty_name" placeholder="e.g. episode-4" value="{{ prefill.bounty_name or '' }}"></label>
-  <label>Pay ($) <input name="rate_usd" type="number" step="0.01" min="0" required placeholder="40" value="{{ prefill.rate_usd or '' }}"></label>
-  <label>…per
-    <select name="rate_mode">{% for v, t in [('1000','1K views'),('100000','100K views'),('1000000','1M views')] %}<option value="{{ v }}" {{ 'selected' if prefill.rate_mode == v }}>{{ t }}</option>{% endfor %}</select>
-  </label>
-  <label>Min views to qualify <input name="min_views" type="number" min="0" placeholder="10000"></label>
-  <label>Cap per clip ($) <input name="cap_usd" type="number" step="0.01" min="0"></label>
-  <label>Allowed platforms <input name="allowed_platforms" value="tiktok,youtube"></label>
-  <label>Required tags / mentions <input name="required_tags" placeholder="@creator #campaigntag"></label>
+  <label>First bounty <input name="bounty_name" placeholder="e.g. episode-4 (empty: main)" value="{{ prefill.bounty_name or '' }}"></label>
+  {% set t = prefill %}{% include "_terms.html" %}
+  <fieldset class="plats"><legend>Allowed platforms</legend>
+    {% for p in all_platforms %}<label class="check"><input type="checkbox" name="pf_{{ p }}" value="1" {{ 'checked' if p in (prefill.platforms or 'tiktok,youtube') }}> {{ platform_names[p] }}</label>{% endfor %}
+  </fieldset>
+  <label>Required tags / mentions <input name="required_tags" placeholder="@creator #campaigntag" value="{{ prefill.required_tags or '' }}"></label>
   <label>Required caption text <input name="caption_notes"></label>
   <label>Disclosure <input name="disclosure" value="#ad"></label>
-  <label>End date <input name="end_date" type="date"></label>
   <label>YouTube RSS feeds to watch <input name="watch_feeds" placeholder="https://www.youtube.com/feeds/videos.xml?channel_id=…"></label>
   <label>Notes <input name="notes" value="{{ prefill.notes or '' }}"></label>
   <label>Kick / Twitch channels <input name="live_channels" placeholder="kick.com/n3on (empty: found by name)" value="{{ prefill.live_channels or '' }}"></label>
   <label class="check"><input type="checkbox" name="live_clip" value="true" {{ 'checked' if prefill.live }}>
     Clip their live streams into this bounty. Clips render once you add the requirement screenshots.</label>
-  <label class="check"><input type="checkbox" name="force"> Override the gambling blocklist</label>
+  <label class="check"><input type="checkbox" name="force"> Political campaign whose brief names the sponsor and its disclosure terms (or override the blocklist)</label>
   <button class="go">Add campaign</button>
 </form>
 </details>

@@ -28,6 +28,7 @@ from clipforge import (
     jobqueue,
     library,
     live,
+    money,
     notify,
     pipeline,
     scout,
@@ -134,10 +135,49 @@ def _live_now() -> bool:
 
 
 templates.env.globals["live_now"] = _live_now
+templates.env.globals |= {"marketplaces": money.MARKETPLACES,
+                          "campaign_types": money.CAMPAIGN_TYPES,
+                          "payer_types": money.PAYER_TYPES, "cap_views": money.cap_views,
+                          "all_platforms": ["tiktok", "youtube", "instagram", "x"],
+                          "platform_names": {"tiktok": "TikTok", "youtube": "YouTube Shorts",
+                                             "instagram": "Instagram Reels", "x": "X"},
+                          "categories": ["podcast", "interview", "comedy", "startup", "soccer",
+                                         "gaming", "streamer", "music", "brand", "political",
+                                         "other"]}
 
 
 def page(request: Request, name: str, **ctx):
     return templates.TemplateResponse(request, name, {"active": name.split(".")[0], **ctx})
+
+
+def _num(v) -> float | None:
+    try:
+        return float(v) if v is not None and str(v).strip() != "" else None
+    except ValueError:
+        return None
+
+
+def terms_from(form) -> dict:
+    """A bounty's money terms and rules from the _terms.html fields (D38). min_views is
+    derived from the minimum payout when one is given (money.min_views_for)."""
+    kind = form.get("campaign_type") or "cpm"
+    if kind not in money.CAMPAIGN_TYPES:
+        raise ValueError(f"unknown pay type {kind}")
+    t = {"campaign_type": kind, "rate_usd": _num(form.get("rate_usd")) or 0.0,
+         "rate_per_views": int(form.get("rate_mode") or 1000),
+         "min_views": int(_num(form.get("min_views")) or 0),
+         "end_date": form.get("end_date") or None,
+         "pays_on": form.get("pays_on") if form.get("pays_on") in (
+             "views", "engaged_views") else "unknown"}
+    for k in ("cap_usd", "min_payout_usd", "flat_fee_bonus_usd", "budget_total_usd",
+              "budget_remaining_usd"):
+        t[k] = _num(form.get(k))
+    for k in ("brief_url", "audience_rules", "footage_scope", "brief_text"):
+        t[k] = (form.get(k) or "").strip()
+    for k in ("onscreen_ad_label_required", "ai_video_banned"):
+        t[k] = form.get(k) in ("true", "on", True)
+    t["min_views"] = money.min_views_for(t)
+    return t
 
 
 def back(url: str, msg: str = "") -> RedirectResponse:
@@ -522,23 +562,34 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         return b
 
     @app.get("/campaigns")
-    def campaigns(request: Request, conn: DB, msg: str = ""):
+    def campaigns(request: Request, conn: DB, msg: str = "", m: str = ""):
         # Query params pre-fill the Add form (the Scout page's "Add as campaign" link).
-        prefill = {k: v for k, v in request.query_params.items() if k != "msg"}
+        prefill = {k: v for k, v in request.query_params.items() if k not in ("msg", "m")}
+        if prefill.get("rate_mode", "").isdigit():
+            prefill["rate_per_views"] = int(prefill["rate_mode"])
+        for k in ("rate_usd", "min_payout_usd", "cap_usd", "flat_fee_bonus_usd",
+                  "budget_total_usd", "budget_remaining_usd", "min_views"):
+            if k in prefill:
+                prefill[k] = _num(prefill[k])
         camps = list_campaigns(conn)
+        used = {c["marketplace"] for c in camps}
+        if m in money.MARKETPLACES:
+            camps = [c for c in camps if c["marketplace"] == m]
         for c in camps:
             c["bounties"] = list_bounties(conn, c["id"])
             for b in c["bounties"]:
                 b["prog"] = inbox.progress(conn, b)
         # A streamer added on the Lives tab, with no paid bounty, lives there only.
         camps = [c for c in camps if c["bounties"] or not (c["watch_live"] or c["live_channels"])]
-        return page(request, "campaigns.html", campaigns=camps, msg=msg, prefill=prefill)
+        return page(request, "campaigns.html", campaigns=camps, msg=msg, prefill=prefill,
+                    market=m if m in money.MARKETPLACES else "", markets_used=used)
 
     @app.post("/campaigns")
     async def create_campaign(request: Request, conn: DB):
         """Add a campaign with its first bounty. A campaign that already exists (same name) just
         gets the new bounty, so Scout's "Add" works for a second episode too."""
-        form = {k: v for k, v in dict(await request.form()).items() if v not in ("", None)}
+        raw = dict(await request.form())
+        form = {k: v for k, v in raw.items() if v not in ("", None)}
         force = form.pop("force", None) == "on"
         clip_live = form.pop("live_clip", None) == "true"
         chans, bad = live.parse_channels(form.get("live_channels", ""))
@@ -547,12 +598,17 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
                         " (use e.g. kick.com/n3on)")
         form["live_channels"] = " ".join(chans)
         form["watch_live"] = bool(chans) or clip_live
+        try:
+            terms = terms_from(raw)
+        except ValueError as e:
+            return back("/campaigns", str(e))
+        for k in (*terms, "rate_mode"):
+            form.pop(k, None)
+        form["allowed_platforms"] = ",".join(
+            p for p in PLATFORMS if raw.get(f"pf_{p}")) or form.get("allowed_platforms",
+                                                                    "tiktok,youtube")
         bounty = {"live_clip": clip_live, "render_hold": clip_live,
-                  "name": form.pop("bounty_name", "main"),
-                  "rate_usd": form.pop("rate_usd", 0),
-                  "rate_per_views": int(form.pop("rate_mode", 1000)),
-                  "min_views": form.pop("min_views", 0), "cap_usd": form.pop("cap_usd", None),
-                  "end_date": form.pop("end_date", None)}
+                  "name": form.pop("bounty_name", "main"), **terms}
         existing = conn.execute("SELECT id FROM campaigns WHERE lower(name)=lower(?)",
                                 (form.get("name", ""),)).fetchone()
         try:
@@ -590,24 +646,26 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
                         " k.candidate_id=ca.id WHERE s.campaign_id=?", (cid,)).fetchone())
 
     @app.post("/campaigns/{cid}/bounties")
-    def bounty_add(cid: int, conn: DB, name: str = Form(...), rate_usd: float = Form(0),
-                   rate_mode: int = Form(1000), min_views: int = Form(0),
-                   end_date: str = Form("")):
+    async def bounty_add(request: Request, cid: int, conn: DB):
         _camp_or_404(conn, cid)
+        form = dict(await request.form())
+        name = (form.get("name") or "").strip()
         try:
-            bid = add_bounty(conn, cid, BountyIn(name=name, rate_usd=rate_usd,
-                                                 rate_per_views=rate_mode, min_views=min_views,
-                                                 end_date=end_date or None))
+            bid = add_bounty(conn, cid, BountyIn(name=name, **terms_from(form)))
         except ValueError as e:
             return back(f"/campaigns/{cid}", str(e))
         return back(f"/campaigns/{cid}/bounties/{bid}", f"Bounty {name} added")
 
     @app.post("/campaigns/{cid}/settings")
-    def campaign_settings(cid: int, conn: DB, required_tags: str = Form(""),
-                          allowed_platforms: str = Form(""), notes: str = Form("")):
-        conn.execute("UPDATE campaigns SET required_tags=?, allowed_platforms=?, notes=?"
-                     " WHERE id=?", (required_tags.strip(), allowed_platforms.strip()
-                                     or "tiktok,youtube", notes.strip(), cid))
+    async def campaign_settings(request: Request, cid: int, conn: DB):
+        form = dict(await request.form())
+        plats = ",".join(p for p in PLATFORMS if form.get(f"pf_{p}")) or "tiktok,youtube"
+        conn.execute("UPDATE campaigns SET required_tags=?, allowed_platforms=?, notes=?,"
+                     " marketplace=?, category=? WHERE id=?",
+                     ((form.get("required_tags") or "").strip(), plats,
+                      (form.get("notes") or "").strip(),
+                      form.get("marketplace") if form.get("marketplace") in money.MARKETPLACES
+                      else "other", (form.get("category") or "").strip(), cid))
         return back(f"/campaigns/{cid}", "Saved")
 
     @app.post("/campaigns/{cid}/status")
@@ -668,21 +726,25 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
                     sessions=live.sessions(conn, bounty_id=bid))
 
     @app.post("/campaigns/{cid}/bounties/{bid}/settings")
-    def bounty_settings(cid: int, bid: int, conn: DB, rate_usd: float = Form(0),
-                        rate_mode: int = Form(1000), min_views: int = Form(0),
-                        cap_usd: str = Form(""), end_date: str = Form(""),
-                        required_tags: str = Form(""), notes: str = Form(""),
-                        auto_queue: bool = Form(False), clips_wanted: int = Form(6),
-                        live_clip: bool = Form(False), render_hold: bool = Form(False)):
+    async def bounty_settings(request: Request, cid: int, bid: int, conn: DB):
         b = _bounty_or_404(conn, cid, bid)
+        form = dict(await request.form())
+        try:
+            t = terms_from(form)
+        except ValueError as e:
+            return back(f"/campaigns/{cid}/bounties/{bid}", str(e))
+        t |= {"required_tags": (form.get("required_tags") or "").strip(),
+              "notes": (form.get("notes") or "").strip(),
+              "auto_queue": int(form.get("auto_queue") == "true"),
+              "clips_wanted": _clips(int(_num(form.get("clips_wanted")) or 6)),
+              "live_clip": int(form.get("live_clip") == "true"),
+              "render_hold": int(form.get("render_hold") == "true")}
+        if t["budget_remaining_usd"] != b["budget_remaining_usd"]:
+            t["budget_checked_at"] = utcnow()
+        render_hold = t["render_hold"]
         with tx(conn):
-            conn.execute(
-                "UPDATE bounties SET rate_usd=?, rate_per_views=?, min_views=?, cap_usd=?,"
-                " end_date=?, required_tags=?, notes=?, auto_queue=?, clips_wanted=?,"
-                " live_clip=?, render_hold=? WHERE id=?",
-                (rate_usd, rate_mode, min_views, float(cap_usd) if cap_usd.strip() else None,
-                 end_date or None, required_tags.strip(), notes.strip(), int(auto_queue),
-                 _clips(clips_wanted), int(live_clip), int(render_hold), bid))
+            conn.execute(f"UPDATE bounties SET {', '.join(f'{k}=?' for k in t)} WHERE id=?",
+                         (*t.values(), bid))
             if b["render_hold"] and not render_hold:
                 bounties.release(conn, bid)  # unticking the hold renders what was waiting
         return back(f"/campaigns/{cid}/bounties/{bid}", "Saved")

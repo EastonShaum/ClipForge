@@ -1,0 +1,29 @@
+{# A bounty's money terms and rules (D38). `t` is the bounty being edited, or an empty dict. #}
+{% set t = t or {} %}
+<label>Pays
+  <select name="campaign_type">{% for k, v in campaign_types.items() %}<option value="{{ k }}" {{ 'selected' if (t.campaign_type or 'cpm') == k }}>{{ v }}</option>{% endfor %}</select>
+</label>
+<label>Rate ($) <input name="rate_usd" type="number" step="0.01" min="0" placeholder="1.00" value="{{ t.rate_usd if t.rate_usd else '' }}"></label>
+<label>…per
+  <select name="rate_mode">{% for v, l in [(1000,'1K views'),(100000,'100K views'),(1000000,'1M views')] %}<option value="{{ v }}" {{ 'selected' if (t.rate_per_views or 1000) == v }}>{{ l }}</option>{% endfor %}</select>
+  <span class="small muted" style="font-weight:400">Per post: the rate is what one approved post pays.</span>
+</label>
+<label>Minimum payout ($) <input name="min_payout_usd" type="number" step="0.01" min="0" placeholder="10" value="{{ t.min_payout_usd if t.min_payout_usd is not none else '' }}">
+  <span class="small muted" style="font-weight:400">Sets the minimum views. Or give the views:</span></label>
+<label>Minimum views <input name="min_views" type="number" min="0" placeholder="10000" value="{{ t.min_views or '' }}"></label>
+<label>Max payout per clip ($) <input name="cap_usd" type="number" step="0.01" min="0" value="{{ t.cap_usd if t.cap_usd is not none else '' }}"></label>
+<label>Flat-fee bonus ($) <input name="flat_fee_bonus_usd" type="number" step="0.01" min="0" value="{{ t.flat_fee_bonus_usd if t.flat_fee_bonus_usd is not none else '' }}"></label>
+<label>Total budget ($) <input name="budget_total_usd" type="number" step="1" min="0" value="{{ t.budget_total_usd if t.budget_total_usd is not none else '' }}"></label>
+<label>Budget left ($) <input name="budget_remaining_usd" type="number" step="1" min="0" value="{{ t.budget_remaining_usd if t.budget_remaining_usd is not none else '' }}"></label>
+<label>Ends <input name="end_date" type="date" value="{{ t.end_date or '' }}"></label>
+<label>Campaign page (where you submit) <input name="brief_url" type="url" placeholder="https://contentrewards.com/…" value="{{ t.brief_url or '' }}"></label>
+<label>Audience rules <input name="audience_rules" placeholder="50%+ US viewers" value="{{ t.audience_rules or '' }}"></label>
+<label>Footage allowed <input name="footage_scope" placeholder="the sponsor segment only" value="{{ t.footage_scope or '' }}"></label>
+<label>YouTube pays on
+  <select name="pays_on">{% for k, l in [('unknown','not stated'),('views','public views'),('engaged_views','engaged views')] %}<option value="{{ k }}" {{ 'selected' if (t.pays_on or 'unknown') == k }}>{{ l }}</option>{% endfor %}</select>
+</label>
+<label class="check"><input type="checkbox" name="onscreen_ad_label_required" value="true" {{ 'checked' if t.onscreen_ad_label_required }}>
+  Brief requires an on-screen "Paid partnership #ad" label (burned into its clips)</label>
+<label class="check"><input type="checkbox" name="ai_video_banned" value="true" {{ 'checked' if t.ai_video_banned }}>
+  Brief bans AI-generated video</label>
+<label style="grid-column: 1 / -1">Brief <textarea name="brief_text" rows="3" placeholder="Paste the brief's text">{{ t.brief_text or '' }}</textarea></label>

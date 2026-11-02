@@ -1,0 +1,5 @@
+{#- One bounty's pay in a few words: "$1.00 / 1K views", "$25 per post", "retainer". -#}
+{%- if b.campaign_type == 'per_post' -%}{{ b.rate_usd|money }} per post
+{%- elif b.campaign_type in ('retainer', 'prize_pool') -%}{{ campaign_types[b.campaign_type] }}
+{%- else -%}{{ (b.rate_usd * 1000 / b.rate_per_views)|money if b.rate_per_views else '$0' }} / 1K views{%- endif -%}
+{%- if b.min_views %} · min {{ b.min_views|num }}{% endif %}{% if b.cap_usd %} · max {{ b.cap_usd|money }}{% endif %}

@@ -3,10 +3,13 @@
 {% block content %}
 {% if busy %}<meta http-equiv="refresh" content="20">{% endif %}
 {% include "_bounty_head.html" %}
-{% if b.status != 'active' or b.cap_usd or b.end_date %}<div class="row small">
+{% if b.status != 'active' or b.end_date or b.audience_rules or b.footage_scope or b.ai_video_banned or b.onscreen_ad_label_required %}<div class="row small">
   {% if b.status != 'active' %}<span class="chip">{{ b.status }}</span>{% endif %}
-  {% if b.cap_usd %}<span>Capped at {{ b.cap_usd|money }} per clip</span>{% endif %}
   {% if b.end_date %}<span>Ends {{ b.end_date }}</span>{% endif %}
+  {% if b.audience_rules %}<span class="chip">Audience: {{ b.audience_rules }}</span>{% endif %}
+  {% if b.footage_scope %}<span class="chip">Footage: {{ b.footage_scope }}</span>{% endif %}
+  {% if b.ai_video_banned %}<span class="chip">No AI video: real footage only</span>{% endif %}
+  {% if b.onscreen_ad_label_required %}<span class="chip">On-screen #ad label</span>{% endif %}
 </div>{% endif %}
 {% set tags = (c.required_tags ~ ' ' ~ b.required_tags)|trim %}
 {% if tags %}<div class="small">Caption tags: {{ tags }}</div>{% endif %}
@@ -126,13 +129,7 @@
   <details>
   <summary>Bounty settings</summary>
   <form method="post" action="/campaigns/{{ c.id }}/bounties/{{ b.id }}/settings" class="grid2" style="margin-top:8px">
-    <label>Pay ($) <input name="rate_usd" type="number" step="0.01" min="0" value="{{ b.rate_usd }}"></label>
-    <label>…per
-      <select name="rate_mode">{% for v, t in [(1000,'1K views'),(100000,'100K views'),(1000000,'1M views')] %}<option value="{{ v }}" {{ 'selected' if b.rate_per_views == v }}>{{ t }}</option>{% endfor %}</select>
-    </label>
-    <label>Min views to qualify <input name="min_views" type="number" min="0" value="{{ b.min_views }}"></label>
-    <label>Cap per clip ($) <input name="cap_usd" type="number" step="0.01" min="0" value="{{ b.cap_usd if b.cap_usd is not none else '' }}"></label>
-    <label>Ends <input name="end_date" type="date" value="{{ b.end_date or '' }}"></label>
+    {% set t = b %}{% include "_terms.html" %}
     <label>Extra caption tags (on top of {{ c.required_tags or 'the campaign\'s' }}) <input name="required_tags" value="{{ b.required_tags }}"></label>
     <label>Notes <textarea name="notes" rows="3">{{ b.notes }}</textarea></label>
     <label>Clips per video <input name="clips_wanted" type="number" min="1" max="18" value="{{ b.clips_wanted }}"></label>

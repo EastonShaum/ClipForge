@@ -108,13 +108,42 @@ class Settings(BaseSettings):
 
     # Policy
     blocked_categories: list[str] = Field(
-        default_factory=lambda: ["gambling", "casino", "sports betting", "sportsbook"]
+        default_factory=lambda: ["gambling", "casino", "sports betting", "sportsbook", "poker",
+                                 "prediction market"]
     )
     blocked_keywords: list[str] = Field(
         default_factory=lambda: ["stake", "casino", "roobet", "rollbit", "bet365", "draftkings",
                                  "fanduel", "gamdom", "shuffle.com", "slots", "jack.com", "blackjack",
-                                 "roulette", "gambling"]
+                                 "roulette", "gambling", "poker", "sportsbook",
+                                 # Prediction markets (D38): blocked by default; Easton decides.
+                                 "polymarket", "kalshi", "prediction market"]
     )
+    # Political campaigns are skipped unless the brief names the sponsor and its disclosure
+    # terms (a box Easton ticks when adding one).
+    terms_needed_categories: list[str] = Field(default_factory=lambda: ["political"])
+    # Scout ranks these first (D38): they fit the accounts and pay off on Content Rewards.
+    priority_categories: list[str] = Field(
+        default_factory=lambda: ["podcast", "interview", "comedy", "startup", "product", "soccer"])
+
+    # Money (D38). Content Rewards' creator terms (§5, checked 2026-11-02): 10% of every CPM and
+    # prize-pool payout; per-post and retainer: 10% under a $5,000 budget, 0% at $5,000 or more.
+    # Payouts recorded on posts show the real fee; change these if they disagree.
+    cr_fee: float = 0.10
+    cr_fee_free_budget_usd: float = 5000.0
+    target_hourly_usd: float = 50.0  # Easton's freelance rate: the bar for $/hour
+    # Chance a post reaches at least N views, until an account has min_posts_for_odds posts
+    # with views: then its own history replaces these. TikTok's median post gets ~500 views.
+    view_odds: dict[int, float] = Field(default_factory=lambda: {
+        500: 0.5, 10_000: 0.30, 100_000: 0.03, 1_000_000: 0.003})
+    min_posts_for_odds: int = 30
+    max_views: int = 10_000_000  # no clip is counted on past this (keeps uncapped EV finite)
+    budget_low_ratio: float = 0.2  # ping when a bounty's budget left drops below this
+    near_min_ratio: float = 0.7  # ping when a post reaches this share of its minimum views
+    end_soon_days: int = 21  # Scout marks down bounties ending sooner than this
+
+    # Posting cadence (D38): one post a day per platform while an account warms up, then 1-2.
+    warmup_days: int = 14
+    posts_per_day_max: int = 2
 
     @property
     def db_path(self) -> Path:
