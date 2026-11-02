@@ -43,13 +43,15 @@ def effective_per_1k(rate_usd: float, rate_per_views: int) -> float:
     return rate_usd * 1000 / rate_per_views if rate_per_views else 0.0
 
 
-def blocked_reason(c: CampaignIn) -> str | None:
+def blocked_reason(c: CampaignIn, terms_ok: bool = False) -> str | None:
+    """Why this campaign can't be added: a blocked category or keyword, or a category that
+    needs the brief's sponsor and disclosure terms (terms_ok says Easton checked them)."""
     s = get_settings()
     for cat in s.blocked_categories:
         if cat.lower() in c.category.lower():
             return f"blocked category: {cat}"
     for cat in s.terms_needed_categories:
-        if cat.lower() in c.category.lower():
+        if cat.lower() in c.category.lower() and not terms_ok:
             return (f"{cat} campaign: add it only if the brief names the sponsor and its"
                     " disclosure terms")
     return blocked_text(" ".join([c.name, c.category, c.notes, c.source_links]))
@@ -71,8 +73,9 @@ def folder_name(name: str) -> str:
     return clean[:80] or "campaign"
 
 
-def add_campaign(conn: sqlite3.Connection, c: CampaignIn, *, force: bool = False) -> int:
-    reason = blocked_reason(c)
+def add_campaign(conn: sqlite3.Connection, c: CampaignIn, *, force: bool = False,
+                 terms_ok: bool = False) -> int:
+    reason = blocked_reason(c, terms_ok)
     if reason and not force:
         raise ValueError(f"Campaign rejected by blocklist ({reason}). Use force to override.")
     data = c.model_dump()

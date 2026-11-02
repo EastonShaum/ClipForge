@@ -679,6 +679,7 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         raw = dict(await request.form())
         form = {k: v for k, v in raw.items() if v not in ("", None)}
         force = form.pop("force", None) == "on"
+        terms_ok = form.pop("terms_ok", None) == "on"
         clip_live = form.pop("live_clip", None) == "true"
         chans, bad = live.parse_channels(form.get("live_channels", ""))
         if bad:
@@ -701,8 +702,8 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
                                 (form.get("name", ""),)).fetchone()
         try:
             with tx(conn):
-                cid = existing["id"] if existing else add_campaign(conn, CampaignIn(**form),
-                                                                   force=force)
+                cid = existing["id"] if existing else add_campaign(
+                    conn, CampaignIn(**form), force=force, terms_ok=terms_ok)
                 if existing and (chans or clip_live):  # Scout's "Add & clip live" again
                     conn.execute("UPDATE campaigns SET watch_live=1, live_channels=CASE WHEN"
                                  " ?='' THEN live_channels ELSE ? END WHERE id=?",

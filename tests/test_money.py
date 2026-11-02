@@ -71,8 +71,11 @@ def test_political_needs_the_sponsor_terms_and_prediction_markets_are_blocked(cl
                                         "rate_usd": "1"})
     assert "names the sponsor" in r.text
     assert not conn.execute("SELECT 1 FROM campaigns").fetchone()
+    r = client.post("/campaigns", data={"name": "Stake Votes", "category": "political",
+                                        "rate_usd": "1", "terms_ok": "on"})
+    assert "blocked keyword: stake" in r.text  # the terms box doesn't clear gambling
     r = client.post("/campaigns", data={"name": "Vote Clips", "category": "political",
-                                        "rate_usd": "1", "force": "on"})
+                                        "rate_usd": "1", "terms_ok": "on"})
     assert "Campaign #1 added" in r.text
     r = client.post("/campaigns", data={"name": "Kalshi Picks", "rate_usd": "1"})
     assert "blocked keyword: kalshi" in r.text

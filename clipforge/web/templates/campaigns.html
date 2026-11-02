@@ -58,7 +58,8 @@
   <label>Kick / Twitch channels <input name="live_channels" placeholder="kick.com/n3on (empty: found by name)" value="{{ prefill.live_channels or '' }}"></label>
   <label class="check"><input type="checkbox" name="live_clip" value="true" {{ 'checked' if prefill.live }}>
     Clip their live streams into this bounty. Clips render once you add the requirement screenshots.</label>
-  <label class="check"><input type="checkbox" name="force"> Political campaign whose brief names the sponsor and its disclosure terms (or override the blocklist)</label>
+  <label class="check"><input type="checkbox" name="terms_ok"> Political: the brief names the sponsor and its disclosure terms</label>
+  <label class="check"><input type="checkbox" name="force"> Override the gambling blocklist</label>
   <button class="go">Add campaign</button>
 </form>
 </details>
