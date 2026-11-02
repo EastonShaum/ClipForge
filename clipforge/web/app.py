@@ -613,9 +613,11 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
 
     @app.post("/posts/{post_id}/views")
     def add_views(post_id: int, conn: DB, views: int = Form(...), likes: str = Form(""),
-                  next: str = Form("")):
-        conn.execute("INSERT INTO view_snapshots (post_id, views, likes) VALUES (?,?,?)",
-                     (post_id, views, int(likes) if likes.strip().isdigit() else None))
+                  engaged: str = Form(""), next: str = Form("")):
+        conn.execute("INSERT INTO view_snapshots (post_id, views, likes, engaged_views)"
+                     " VALUES (?,?,?,?)",
+                     (post_id, views, int(likes) if likes.strip().isdigit() else None,
+                      int(engaged) if engaged.strip().isdigit() else None))
         return back(_next(next, "/posts"), "Views saved")
 
     # ---------- campaigns → bounties (each bounty: footage, requirements, settings) ----------
@@ -769,6 +771,11 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         remove_logo(conn, cid, rel or None)
         return back(f"/campaigns/{cid}", "Logo removed")
 
+    def _time(conn, bid: int) -> dict:
+        r = conn.execute("SELECT COALESCE(SUM(minutes), 0) m, COUNT(*) n FROM work_log"
+                         " WHERE bounty_id=?", (bid,)).fetchone()
+        return {"minutes": r["m"], "entries": r["n"]}
+
     @app.get("/campaigns/{cid}/bounties/{bid}")
     def bounty_page(request: Request, cid: int, bid: int, conn: DB, msg: str = ""):
         c = _camp_or_404(conn, cid)
@@ -793,7 +800,8 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
                     tabs=clip_counts(conn, bid), prog=inbox.progress(conn, b),
                     holds=bounties.hold_reasons(conn, b),
                     held=bounties.held_count(conn, bid),
-                    sessions=live.sessions(conn, bounty_id=bid))
+                    sessions=live.sessions(conn, bounty_id=bid), time=_time(conn, bid),
+                    target=s.target_hourly_usd)
 
     @app.post("/campaigns/{cid}/bounties/{bid}/settings")
     async def bounty_settings(request: Request, cid: int, bid: int, conn: DB):
@@ -818,6 +826,16 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
             if b["render_hold"] and not render_hold:
                 bounties.release(conn, bid)  # unticking the hold renders what was waiting
         return back(f"/campaigns/{cid}/bounties/{bid}", "Saved")
+
+    @app.post("/campaigns/{cid}/bounties/{bid}/time")
+    def bounty_time(cid: int, bid: int, conn: DB, minutes: int = Form(...), note: str = Form(""),
+                    day: str = Form("")):
+        _bounty_or_404(conn, cid, bid)
+        if not 0 < minutes <= 24 * 60:
+            return back(f"/campaigns/{cid}/bounties/{bid}#time", "Minutes: 1 to 1440")
+        conn.execute("INSERT INTO work_log (bounty_id, minutes, day, note) VALUES (?,?,?,?)",
+                     (bid, minutes, day or posting.today_local().isoformat(), note.strip()))
+        return back(f"/campaigns/{cid}/bounties/{bid}#time", f"Logged {minutes} min")
 
     @app.post("/campaigns/{cid}/bounties/{bid}/release")
     def bounty_release(cid: int, bid: int, conn: DB):
@@ -1033,6 +1051,7 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
     @app.get("/dashboard")
     def dashboard(request: Request, conn: DB):
         return page(request, "dashboard.html", d=analytics.dashboard(conn),
+                    m=analytics.money_stats(conn),
                     budget=costs.budget_status(conn), jobs=jobqueue.counts(conn),
                     health=health(conn))
 

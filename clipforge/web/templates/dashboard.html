@@ -22,6 +22,42 @@
   <div class="stat"><span class="small muted">In review</span><b>{{ t.in_review }}</b></div>
 </div>
 
+<h2>Money</h2>
+<div class="stats">
+  <div class="stat"><span class="small muted">Paid out</span><b>{{ m.paid_total|money }}</b></div>
+  <div class="stat"><span class="small muted">Time logged</span><b>{{ (m.minutes_total / 60)|round(1) }} h</b></div>
+  <div class="stat"><span class="small muted">Paid per hour</span><b class="{{ 'status-rendered' if m.minutes_total and m.paid_total * 60 / m.minutes_total >= m.target else '' }}">{{ (m.paid_total * 60 / m.minutes_total)|money if m.minutes_total else '—' }}</b><span class="small muted">your rate {{ m.target|money }}</span></div>
+</div>
+{% if m.per_week %}
+<div class="card scroll"><table>
+  <tr><th>Week of</th><th class="n">Time</th><th class="n">Paid</th><th class="n">$/hour</th></tr>
+  {% for w in m.per_week %}<tr><td>{{ w.week }}</td><td class="n">{{ w.minutes }} min</td><td class="n">{{ w.paid|money }}</td>
+    <td class="n {{ 'status-rendered' if w.per_hour and w.per_hour >= m.target else 'status-failed' if w.per_hour is not none }}">{{ w.per_hour|money if w.per_hour is not none else '—' }}</td></tr>{% endfor %}
+</table></div>
+{% endif %}
+{% if m.per_bounty %}
+<div class="card scroll"><table>
+  <tr><th>Bounty</th><th class="n">Time</th><th class="n">Paid</th><th class="n">$/hour</th><th class="n">Est. $/hour</th></tr>
+  {% for r in m.per_bounty %}<tr><td>{{ r.label }}</td><td class="n">{{ r.minutes }} min</td><td class="n">{{ r.paid|money }}</td>
+    <td class="n {{ 'status-rendered' if r.per_hour and r.per_hour >= m.target else 'status-failed' if r.per_hour is not none }}">{{ r.per_hour|money if r.per_hour is not none else '—' }}</td>
+    <td class="n">{{ r.est_per_hour|money if r.est_per_hour is not none else '—' }}</td></tr>{% endfor %}
+</table></div>
+{% else %}<div class="small muted">Log your time on each bounty's Footage tab to see what an hour earns against your {{ m.target|money }}/h rate.</div>{% endif %}
+
+{% if m.accounts %}
+<h2>Accounts</h2>
+<div class="card scroll"><table>
+  <tr><th>Account</th><th class="n">Posts</th><th class="n">p50 views</th><th class="n">p90 views</th></tr>
+  {% for a in m.accounts %}<tr><td>{{ platform_names[a.platform] }} {{ a.handle }}</td><td class="n">{{ a.posts }}</td>
+    <td class="n">{{ a.p50|num if a.p50 is not none else '—' }}</td><td class="n">{{ a.p90|num if a.p90 is not none else '—' }}</td></tr>
+    {% if a.above_p90 %}<tr><td colspan="4" class="small status-failed">Minimum views above this account's p90: {{ a.above_p90|join(', ') }}</td></tr>{% endif %}
+  {% endfor %}
+</table></div>
+{% endif %}
+{% if m.pay_days %}
+<div class="card small">{% for r in m.pay_days %}<div>{{ r.marketplace }}: {{ '%.1f'|format(r.avg) }} days from submitting to paid on average (longest {{ '%.0f'|format(r.max) }}, {{ r.n }} payouts)</div>{% endfor %}</div>
+{% endif %}
+
 <div class="card">
   <div class="row"><b>API spend</b><span class="chip">{{ budget.state }}</span></div>
   <div class="row small"><span>Today {{ budget.today|money }}</span><span>Month {{ budget.month|money }} of {{ budget.cap|money }}</span></div>

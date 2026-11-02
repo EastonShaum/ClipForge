@@ -1,8 +1,12 @@
 """Dashboard numbers. Views use the highest snapshot per post (view counts only go up)."""
 
 import sqlite3
+from datetime import UTC, date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
+from clipforge import money
 from clipforge.bounties import label
+from clipforge.config import get_settings
 from clipforge.campaigns import effective_per_1k, estimate_payout
 
 POST_VIEWS = """
@@ -124,3 +128,73 @@ def dashboard(conn: sqlite3.Connection) -> dict:
         "spend": [dict(r) for r in spend],
         "daily_spend": [dict(r) for r in daily],
     }
+
+
+def _days_between(a: str, b: str) -> float:
+    fmt = "%Y-%m-%dT%H:%M:%SZ"
+    return (datetime.strptime(b, fmt) - datetime.strptime(a, fmt)).total_seconds() / 86400
+
+
+def money_stats(conn: sqlite3.Connection) -> dict:
+    """D38: what an hour of Easton's time earns (paid dollars ÷ logged minutes) per bounty and
+    per week against his freelance rate; each account's p50/p90 views and the bounties whose
+    minimum is above an account's p90; days from submission to payment per marketplace."""
+    s = get_settings()
+    bounties = _bounties(conn)
+    posts = post_rows(conn)
+    paid = [p for p in posts if p["review_status"] == "paid"]
+    minutes: dict[int, int] = {r[0]: r[1] for r in conn.execute(
+        "SELECT bounty_id, SUM(minutes) FROM work_log GROUP BY bounty_id")}
+    per_bounty = []
+    for bid in set(minutes) | {p["bounty_id"] for p in paid}:
+        b = bounties.get(bid)
+        got = sum(p["earned_usd"] or 0 for p in paid if p["bounty_id"] == bid)
+        est = sum(p["earn"] for p in posts if p["bounty_id"] == bid)
+        m = minutes.get(bid, 0)
+        per_bounty.append({"label": b["label"] if b else bid, "minutes": m, "paid": got,
+                           "est": est, "per_hour": got * 60 / m if m else None,
+                           "est_per_hour": est * 60 / m if m else None})
+    per_bounty.sort(key=lambda r: -(r["minutes"]))
+
+    # Weeks start Monday, local time. Paid dollars count in the week they landed.
+    tz = ZoneInfo(s.timezone)
+
+    def week(iso: str) -> str:
+        d = datetime.strptime(iso[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=UTC).astimezone(tz)
+        return (d.date() - timedelta(days=d.weekday())).isoformat()
+
+    weeks: dict[str, dict] = {}
+    for r in conn.execute("SELECT day, minutes FROM work_log"):
+        wk = (date.fromisoformat(r["day"]) - timedelta(days=date.fromisoformat(r["day"])
+                                                       .weekday())).isoformat()
+        weeks.setdefault(wk, {"week": wk, "minutes": 0, "paid": 0.0})["minutes"] += r["minutes"]
+    for p in paid:
+        wk = week(p["paid_at"])
+        weeks.setdefault(wk, {"week": wk, "minutes": 0, "paid": 0.0})["paid"] += \
+            p["earned_usd"] or 0
+    per_week = sorted(weeks.values(), key=lambda w: w["week"], reverse=True)[:8]
+    for w in per_week:
+        w["per_hour"] = w["paid"] * 60 / w["minutes"] if w["minutes"] else None
+
+    accts = []
+    for a in conn.execute("SELECT * FROM accounts ORDER BY platform, handle"):
+        views = money.account_views(conn, a["id"])
+        p90 = money.percentile(views, 0.9)
+        above = [b["label"] for b in bounties.values() if b["status"] == "active"
+                 and not b["live_session_id"] and p90 is not None and len(views) >= 10
+                 and money.min_views_for(b) > p90]
+        accts.append({**dict(a), "posts": len(views), "p50": money.percentile(views, 0.5),
+                      "p90": p90, "above_p90": above})
+
+    pay_days: dict[str, list[float]] = {}
+    for p in paid:
+        if p["submitted_at"] and p["paid_at"]:
+            b = bounties.get(p["bounty_id"])
+            mk = (b or {}).get("marketplace") or "other"
+            pay_days.setdefault(mk, []).append(_days_between(p["submitted_at"], p["paid_at"]))
+    return {"target": s.target_hourly_usd, "per_bounty": per_bounty, "per_week": per_week,
+            "accounts": accts,
+            "pay_days": [{"marketplace": money.MARKETPLACES.get(k, k), "n": len(v),
+                          "avg": sum(v) / len(v), "max": max(v)} for k, v in pay_days.items()],
+            "paid_total": sum(p["earned_usd"] or 0 for p in paid),
+            "minutes_total": sum(minutes.values())}

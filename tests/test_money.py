@@ -76,3 +76,35 @@ def test_political_needs_the_sponsor_terms_and_prediction_markets_are_blocked(cl
     assert "Campaign #1 added" in r.text
     r = client.post("/campaigns", data={"name": "Kalshi Picks", "rate_usd": "1"})
     assert "blocked keyword: kalshi" in r.text
+
+
+def test_dollars_per_hour_percentiles_and_payment_delay(client, conn, campaign_id):
+    from clipforge.analytics import money_stats
+    from tests.test_posting import _clip
+    client.post("/accounts", data={"platform": "tiktok", "handle": "@ez"})
+    acct = conn.execute("SELECT id FROM accounts").fetchone()[0]
+    bid = conn.execute("SELECT id FROM bounties").fetchone()[0]
+    r = client.post(f"/campaigns/{campaign_id}/bounties/{bid}/time",
+                    data={"minutes": "90", "note": "posting"})
+    assert "Logged 90 min" in r.text
+    for i, views in enumerate([100, 200, 300, 400, 500, 600, 700, 800, 900, 50_000]):
+        k, _, _ = _clip(conn, campaign_id, start=i * 60_000, end=i * 60_000 + 20_000)
+        client.post(f"/clips/{k}/post", data={"account_id": str(acct),
+                                               "url": f"https://t.co/{i}"})
+        pid = conn.execute("SELECT MAX(id) FROM posts").fetchone()[0]
+        client.post(f"/posts/{pid}/views", data={"views": str(views)})
+    pid = conn.execute("SELECT MAX(id) FROM posts").fetchone()[0]
+    conn.execute("UPDATE posts SET submitted_at='2026-11-01T00:00:00Z', review_status='paid',"
+                 " earned_usd=60, paid_at='2026-11-04T12:00:00Z' WHERE id=?", (pid,))
+    m = money_stats(conn)
+    assert m["paid_total"] == 60 and m["minutes_total"] == 90
+    assert m["per_bounty"][0]["per_hour"] == pytest.approx(40.0)  # $60 in 1.5 h, under $50
+    a = m["accounts"][0]
+    assert a["posts"] == 10 and a["p50"] == 600 and a["p90"] == 50_000
+    assert a["above_p90"] == []  # min 10K is under this account's p90
+    conn.execute("UPDATE bounties SET min_views=100000")
+    assert money_stats(conn)["accounts"][0]["above_p90"] == ["Test Pod"]
+    assert m["pay_days"][0]["avg"] == pytest.approx(3.5)
+    page = client.get("/dashboard").text
+    assert "Paid per hour" in page and "$40.00" in page and "3.5 days from submitting" in page
+    assert "Minimum views above this account" in page

@@ -125,6 +125,17 @@
   </details>
 </section>
 
+<section class="card" id="time">
+  <h2>Your time</h2>
+  {% set hrs = time.minutes / 60 %}
+  <div class="small">{{ time.minutes }} min logged{% if time.minutes and prog %}: about {{ (prog.earn / hrs)|money }}/h so far, estimated (your rate: {{ target|money }}/h){% endif %}.</div>
+  <form method="post" action="/campaigns/{{ c.id }}/bounties/{{ b.id }}/time" class="row">
+    <input name="minutes" type="number" min="1" max="1440" inputmode="numeric" placeholder="Minutes" required style="flex:1">
+    <input name="note" placeholder="What (reviewing, posting…)" style="flex:2">
+    <button class="go small">Log time</button>
+  </form>
+</section>
+
 <section class="card">
   <details>
   <summary>Bounty settings</summary>

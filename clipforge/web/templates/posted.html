@@ -36,6 +36,7 @@
       <input type="hidden" name="next" value="{{ here }}#post{{ p.id }}">
       <input name="views" type="number" min="0" inputmode="numeric" placeholder="Views" required style="flex:1">
       <input name="likes" type="number" min="0" inputmode="numeric" placeholder="Likes" style="flex:1">
+      {% if p.platform == 'youtube' %}<input name="engaged" type="number" min="0" inputmode="numeric" placeholder="Engaged views" title="YouTube Studio: engaged views" style="flex:1">{% endif %}
       <button class="go">Save views</button>
     </form>
     {% set nxt = here ~ '#post' ~ p.id %}
