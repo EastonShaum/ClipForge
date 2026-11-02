@@ -92,6 +92,7 @@ ADDED_COLUMNS = [("campaigns", "logo_path", "TEXT"), ("posts", "submitted_at", "
                  ("bounties", "pays_on", "TEXT NOT NULL DEFAULT 'unknown'"),
                  ("bounties", "layout", "TEXT"),
                  ("bounties", "facecam", "TEXT"),
+                 ("campaigns", "facecam", "TEXT"),
                  ("posts", "account_id", "INTEGER"),
                  ("posts", "review_status", "TEXT"),
                  ("posts", "reject_reason", "TEXT"),

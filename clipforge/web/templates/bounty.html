@@ -141,6 +141,7 @@
   <summary>Bounty settings</summary>
   <form method="post" action="/campaigns/{{ c.id }}/bounties/{{ b.id }}/settings" class="grid2" style="margin-top:8px">
     {% set t = b %}{% include "_terms.html" %}
+    {% set name, cur, cam, none_label = 'layout', b.layout, b.facecam, 'Default (streams: the streamer\'s)' %}{% include "_layout.html" %}
     <label>Extra caption tags (on top of {{ c.required_tags or 'the campaign\'s' }}) <input name="required_tags" value="{{ b.required_tags }}"></label>
     <label>Notes <textarea name="notes" rows="3">{{ b.notes }}</textarea></label>
     <label>Clips per video <input name="clips_wanted" type="number" min="1" max="18" value="{{ b.clips_wanted }}"></label>

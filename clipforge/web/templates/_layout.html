@@ -1,0 +1,10 @@
+{# Layout picker (D38). `name` is the select's field, `cur`/`cam` the saved values, `none_label` the empty choice. #}
+<label>Clip layout
+  <select name="{{ name }}">
+    <option value="">{{ none_label }}</option>
+    {% for k, l in [('blurfill','Full width over blur'),('crop','Crop to the middle'),('speaker-left','Left speaker'),('speaker-right','Right speaker'),('split','Two speakers stacked'),('facecam','Facecam over gameplay'),('vary','Vary: take turns')] %}
+    <option value="{{ k }}" {{ 'selected' if cur == k }}>{{ l }}</option>{% endfor %}
+  </select>
+</label>
+<label>Facecam position <input name="facecam" value="{{ cam or '' }}" placeholder="tl, tr, bl, br, or x,y,w,h in %">
+  <span class="small muted" style="font-weight:400">Where the camera sits in the stream: a corner, or e.g. 70,5,28,30. Used by Facecam and Vary.</span></label>

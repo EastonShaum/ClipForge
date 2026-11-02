@@ -35,10 +35,65 @@ LOGO_PAD = (24, 12)  # strip padding x, y
 LOGO_STRIP_H = LOGO_H + 2 * LOGO_PAD[1]
 
 
+# Layouts (D38), so an account's clips don't all share one template:
+#   blurfill       the whole frame over a blurred copy (default)
+#   crop           a centered 9:16 window
+#   speaker-left / speaker-right   a 9:16 window on the left or right person (podcast framing)
+#   split          two speakers stacked: the frame's left half on top, the right half below
+#   facecam:<where>  the streamer's camera on top (a third), the gameplay below; <where> is a
+#                  corner (tl, tr, bl, br) or "x,y,w,h" in percent of the frame
+FACECAM_CORNERS = {"tl": (0, 0), "tr": (72, 0), "bl": (0, 70), "br": (72, 70)}
+FACECAM_SIZE = (28, 30)  # % of the frame a corner camera takes
+CAM_H = 640  # facecam layout: camera band height; the gameplay gets the rest
+FULL_CANVAS = ("crop", "speaker-left", "speaker-right", "split", "facecam")
+
+
+def facecam_rect(where: str) -> tuple[float, float, float, float]:
+    """(x, y, w, h) as fractions of the frame."""
+    if where in FACECAM_CORNERS:
+        x, y = FACECAM_CORNERS[where]
+        w, h = FACECAM_SIZE
+    else:
+        x, y, w, h = (float(v) for v in where.split(","))
+        if not (0 <= x < 100 and 0 <= y < 100 and 0 < w <= 100 - x and 0 < h <= 100 - y):
+            raise ValueError(f"facecam rectangle out of the frame: {where}")
+    return x / 100, y / 100, w / 100, h / 100
+
+
+def _base(layout: str) -> str:
+    """The filter that turns input 0 into the 1080x1920 picture, labeled [base]."""
+    kind, _, arg = layout.partition(":")
+    if kind == "crop":
+        return f"[0:v]scale=-2:{H},crop={W}:{H},setsar=1[base]"
+    if kind in ("speaker-left", "speaker-right"):
+        at = "iw/4" if kind == "speaker-left" else "iw*3/4"
+        return f"[0:v]scale=-2:{H},crop={W}:{H}:{at}-{W // 2}:0,setsar=1[base]"
+    if kind == "split":
+        half = H // 2
+        cover = f"scale={W}:{half}:force_original_aspect_ratio=increase,crop={W}:{half}"
+        return (f"[0:v]split=2[l][r];[l]crop=iw/2:ih:0:0,{cover}[top];"
+                f"[r]crop=iw/2:ih:iw/2:0,{cover}[bot];[top][bot]vstack,setsar=1[base]")
+    if kind == "facecam":
+        x, y, w, h = facecam_rect(arg or "tl")
+        game_h = H - CAM_H
+        return (f"[0:v]split=2[f][g];"
+                f"[f]crop=iw*{w:.4f}:ih*{h:.4f}:iw*{x:.4f}:ih*{y:.4f},"
+                f"scale={W}:{CAM_H}:force_original_aspect_ratio=increase,crop={W}:{CAM_H}[cam];"
+                f"[g]scale=-2:{game_h},crop={W}:{game_h}[game];"
+                f"[cam][game]vstack,setsar=1[base]")
+    # blurfill: whole frame centered over a blurred, zoomed copy of itself. Safer than a blind
+    # center crop for two-person podcasts and gameplay where the action isn't centered.
+    return (f"[0:v]split=2[a][b];"
+            f"[a]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,boxblur=10:2,"
+            f"scale={W}:{H},eq=brightness=-0.12[bg];"
+            f"[b]scale={W}:-2[fg];"
+            f"[bg][fg]overlay=(W-w)/2:(H-h)/2-120,setsar=1[base]")
+
+
 def placement(layout: str, src_w: int, src_h: int) -> tuple[int, int]:
     """(logo strip bottom, hook card top) for a source of this size: the card just under the
-    picture, the logos just above it. Crop fills the canvas, so there is no free band."""
-    if layout == "crop" or not (src_w and src_h):
+    picture, the logos just above it. Full-canvas layouts have no free band."""
+    if layout.partition(":")[0] in FULL_CANVAS or not (src_w and src_h):
         return SAFE_TOP + LOGO_STRIP_H, HOOK_TOP_MAX - 80
     pic_h = min(H, round(W * src_h / src_w / 2) * 2)
     top = (H - pic_h) // 2 - PIC_SHIFT
@@ -94,18 +149,7 @@ def filter_graph(layout: str, ass_path: Path | None, fonts_dir: Path, logos: int
                  hook: bool = False, src: tuple[int, int] = (1920, 1080)) -> str:
     """Video filter graph. Input 0 is the source; inputs 1..logos are logo PNGs, then the hook
     card PNG if there is one. Single-image inputs repeat their frame for the whole clip."""
-    if layout == "crop":
-        base = f"[0:v]scale=-2:{H},crop={W}:{H},setsar=1[base]"
-    else:
-        # blurfill: whole frame centered over a blurred, zoomed copy of itself. Safer than a
-        # blind center crop for two-person podcasts and gameplay where the action isn't centered.
-        base = (
-            f"[0:v]split=2[a][b];"
-            f"[a]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,boxblur=10:2,"
-            f"scale={W}:{H},eq=brightness=-0.12[bg];"
-            f"[b]scale={W}:-2[fg];"
-            f"[bg][fg]overlay=(W-w)/2:(H-h)/2-120,setsar=1[base]"
-        )
+    base = _base(layout)
     logo_bottom, hook_top = placement(layout, *src)
     graph, cur = [base], "[base]"
     if logos:

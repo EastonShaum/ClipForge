@@ -61,6 +61,7 @@ from clipforge.db import connect, init_db, tx, utcnow
 from clipforge.feedback import REJECT_REASONS
 from clipforge.ingest import add_source, remote_hosts
 from clipforge.select_prompts import sync_prompts
+from clipforge.stages import render as render_stage
 from clipforge.stages.fetch import dir_size_gb, free_gb
 from clipforge.stages.scout import NotAnImage, prepare_image
 from clipforge.update import code_zip, repo_version
@@ -179,6 +180,17 @@ def terms_from(form) -> dict:
         t[k] = form.get(k) in ("true", "on", True)
     t["min_views"] = money.min_views_for(t)
     return t
+
+
+def layout_fields(form, auto: bool = False) -> tuple[str | None, str | None]:
+    """(layout, facecam) from a layout picker; raises ValueError on a bad camera rectangle."""
+    lay = form.get("layout") or None
+    if lay not in pipeline.LAYOUTS:
+        lay = None
+    cam = (form.get("facecam") or "").replace(" ", "") or None
+    if cam:
+        render_stage.facecam_rect(cam)
+    return lay, cam
 
 
 def back(url: str, msg: str = "") -> RedirectResponse:
@@ -815,6 +827,10 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
             t = terms_from(form)
         except ValueError as e:
             return back(f"/campaigns/{cid}/bounties/{bid}", str(e))
+        try:
+            t["layout"], t["facecam"] = layout_fields(form)
+        except ValueError as e:
+            return back(f"/campaigns/{cid}/bounties/{bid}", str(e))
         t |= {"required_tags": (form.get("required_tags") or "").strip(),
               "notes": (form.get("notes") or "").strip(),
               "auto_queue": int(form.get("auto_queue") == "true"),
@@ -852,17 +868,20 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
     @app.post("/campaigns/{cid}/live")
     def campaign_live(cid: int, conn: DB, live_channels: str = Form(""),
                       watch_live: bool = Form(False), live_layout: str = Form(""),
-                      payer_type: str = Form("")):
+                      payer_type: str = Form(""), facecam: str = Form("")):
         _camp_or_404(conn, cid)
+        try:
+            lay, cam = layout_fields({"layout": live_layout, "facecam": facecam})
+        except ValueError as e:
+            return back("/lives?tab=streamers", str(e))
         chans, bad = live.parse_channels(live_channels)
         if bad:
             return back("/lives?tab=streamers", f"Not a Kick or Twitch channel:"
                         f" {' '.join(bad)} (use e.g. kick.com/n3on)")
         conn.execute("UPDATE campaigns SET live_channels=?, watch_live=?, live_layout=?,"
-                     " payer_type=? WHERE id=?",
-                     (" ".join(chans), int(watch_live),
-                      live_layout if live_layout in ("blurfill", "crop") else None,
-                      payer_type if payer_type in money.PAYER_TYPES else None, cid))
+                     " payer_type=?, facecam=? WHERE id=?",
+                     (" ".join(chans), int(watch_live), lay,
+                      payer_type if payer_type in money.PAYER_TYPES else None, cam, cid))
         return back("/lives?tab=streamers", "Saved. Channels are checked every"
                     f" {s.live_check_s // 60} min.")
 

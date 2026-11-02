@@ -100,11 +100,7 @@
       {% if c.payer_type == 'none' %}<span class="small status-failed" style="font-weight:400">Not checked or recorded: nobody pays for these clips.</span>
       {% elif not c.payer_type %}<span class="small muted" style="font-weight:400">Set it: "Nobody" stops recording (saves the laptop's disk).</span>{% endif %}
     </label>
-    <label>Clip shape <select name="live_layout">
-      <option value="">Auto: full width for a shared screen, crop for a camera</option>
-      <option value="blurfill" {{ 'selected' if c.live_layout == 'blurfill' }}>Full width: games, screens</option>
-      <option value="crop" {{ 'selected' if c.live_layout == 'crop' }}>Crop to the middle: IRL camera</option>
-    </select></label>
+    {% set name, cur, cam, none_label = 'live_layout', c.live_layout, c.facecam, 'Auto: full width for a shared screen, crop for a camera' %}{% include "_layout.html" %}
     <button class="go small">Save</button>
   </form>
 </section>

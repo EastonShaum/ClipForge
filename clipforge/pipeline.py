@@ -93,7 +93,7 @@ def build_context(conn: sqlite3.Connection, s: Settings, job: sqlite3.Row) -> di
                 # D38: the label is burned in when the bounty's brief requires it.
                 "onscreen": bool((s and s.onscreen_disclosure)
                                  or src["onscreen_ad_label_required"]),
-                "layout": (info["live_layout"] or s.live_layout) if info else None}
+                "layout": layout_for(s, src, info, cand["id"])}
     if kind == "scout":
         shot = _shot(conn, job)
         try:
@@ -153,6 +153,24 @@ def run_handler(s: Settings, kind: str, ctx: dict, out_dir: Path | None = None) 
     finally:
         _rm_tree(work)
     raise ValueError(f"unknown job kind {kind}")
+
+
+LAYOUTS = ("blurfill", "crop", "speaker-left", "speaker-right", "split", "facecam", "vary")
+
+
+def layout_for(s: Settings | None, src, info: dict | None, cand_id: int) -> str | None:
+    """The clip's layout (D38): the bounty's, else the streamer's for a live clip (auto: screen
+    or camera), else the render default (None). "vary" takes turns by clip so an account's
+    clips don't all look alike; "facecam" carries where the camera is."""
+    lay, cam = src["bounty_layout"], src["facecam"]
+    if not lay and info:
+        lay, cam = info["live_layout"] or (s.live_layout if s else "auto"), info.get("facecam")
+    if lay == "vary":
+        opts = ["blurfill", "crop"] + ([f"facecam:{cam}"] if cam else [])
+        return opts[cand_id % len(opts)]
+    if lay == "facecam":
+        return f"facecam:{cam or 'tl'}"
+    return lay or None
 
 
 def _logos(s: Settings, rels: list[str]) -> list[str]:
