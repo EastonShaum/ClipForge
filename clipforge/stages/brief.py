@@ -3,13 +3,13 @@
 Touches no DB. Applying what it finds to the campaign is a separate, user-confirmed step
 (clipforge/briefs.py)."""
 
-import base64
 from pathlib import Path
 
 from pydantic import BaseModel
 
 from clipforge.config import Settings
 from clipforge.costs import llm_cost
+from clipforge.stages import screenshot
 
 PROMPT = """This is a screenshot of the requirements ("brief") for a paid clipping campaign: \
 clippers cut short videos from the brand's footage and get paid per view.
@@ -76,15 +76,10 @@ def read_brief(s: Settings, image_path: Path) -> tuple[dict, dict]:
     if not s.anthropic_api_key:
         raise MissingKey("CF_ANTHROPIC_API_KEY is not set")
     client = anthropic.Anthropic(api_key=s.anthropic_api_key, max_retries=4)
-    img = base64.standard_b64encode(image_path.read_bytes()).decode()
     resp = client.messages.parse(
         model=s.select_model,
-        max_tokens=3000,
-        messages=[{"role": "user", "content": [
-            {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
-                                         "data": img}},
-            {"type": "text", "text": PROMPT},
-        ]}],
+        max_tokens=4000,
+        messages=[{"role": "user", "content": screenshot.content(image_path, PROMPT)}],
         output_format=Brief,
     )
     tin, tout = resp.usage.input_tokens, resp.usage.output_tokens
@@ -94,7 +89,7 @@ def read_brief(s: Settings, image_path: Path) -> tuple[dict, dict]:
 
 
 def estimate_usd(s: Settings) -> float:
-    return llm_cost(s.select_model, 2500, 1000) if s.select_provider == "anthropic" else 0.0
+    return llm_cost(s.select_model, 10000, 1500) if s.select_provider == "anthropic" else 0.0
 
 
 def _fake() -> dict:

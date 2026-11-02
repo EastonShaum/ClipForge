@@ -3,20 +3,15 @@
 Only reads what the screenshot shows; it never visits the site. Ranking lives in
 clipforge/scout.py because it needs the DB (earlier screenshots give the fill speed)."""
 
-import base64
-import hashlib
 import re
-import subprocess
-import tempfile
 from pathlib import Path
 
 from pydantic import BaseModel
 
 from clipforge.config import Settings
 from clipforge.costs import llm_cost
-from clipforge.tools import ffmpeg
-
-MAX_EDGE = 1568  # the API downsizes anything larger, so don't pay to upload it
+from clipforge.stages import screenshot
+from clipforge.stages.screenshot import NotAnImage, prepare_image  # noqa: F401 - app imports these
 
 PROMPT = """This is a screenshot of a paid clipping marketplace: Content Rewards \
 (contentrewards.com), Clipping.net or Whop. It shows campaign cards or one campaign's brief page; \
@@ -108,31 +103,6 @@ def clean(b: Bounty) -> dict:
     return d
 
 
-class NotAnImage(ValueError):
-    pass
-
-
-def prepare_image(data: bytes, dest_dir: Path) -> tuple[str, Path]:
-    """Shrink to MAX_EDGE and store as JPEG named by content hash. Returns (sha, path)."""
-    sha = hashlib.sha256(data).hexdigest()[:16]
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    out = dest_dir / f"{sha}.jpg"
-    if out.exists():
-        return sha, out
-    with tempfile.TemporaryDirectory(dir=dest_dir) as tmp:
-        src = Path(tmp) / "in"
-        src.write_bytes(data)
-        part = Path(tmp) / "out.jpg"
-        proc = subprocess.run(
-            [ffmpeg(), "-v", "error", "-y", "-i", str(src), "-frames:v", "1", "-vf",
-             f"scale='if(gt(iw,ih),min({MAX_EDGE},iw),-2)':'if(gt(iw,ih),-2,min({MAX_EDGE},ih))'",
-             "-q:v", "3", str(part)], capture_output=True, text=True)
-        if proc.returncode or not part.exists():
-            raise NotAnImage("not a readable image (use PNG or JPEG screenshots)")
-        part.replace(out)  # atomic
-    return sha, out
-
-
 def read_screenshot(s: Settings, image_path: Path) -> tuple[list[dict], dict]:
     if s.select_provider == "fake":
         return _fake(), {"provider": "fake", "model": "fake", "usd": 0.0,
@@ -146,15 +116,10 @@ def read_screenshot(s: Settings, image_path: Path) -> tuple[list[dict], dict]:
     if not s.anthropic_api_key:
         raise MissingKey("CF_ANTHROPIC_API_KEY is not set")
     client = anthropic.Anthropic(api_key=s.anthropic_api_key, max_retries=4)
-    img = base64.standard_b64encode(image_path.read_bytes()).decode()
     resp = client.messages.parse(
         model=s.select_model,
-        max_tokens=4000,
-        messages=[{"role": "user", "content": [
-            {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
-                                         "data": img}},
-            {"type": "text", "text": PROMPT},
-        ]}],
+        max_tokens=8000,
+        messages=[{"role": "user", "content": screenshot.content(image_path, PROMPT)}],
         output_format=ScoutRead,
     )
     tin, tout = resp.usage.input_tokens, resp.usage.output_tokens
@@ -165,7 +130,8 @@ def read_screenshot(s: Settings, image_path: Path) -> tuple[list[dict], dict]:
 
 
 def estimate_usd(s: Settings) -> float:
-    return llm_cost(s.select_model, 2500, 1500) if s.select_provider == "anthropic" else 0.0
+    # Up to ~6 full-detail slices of a tall page; the real cost is logged from usage.
+    return llm_cost(s.select_model, 10000, 3000) if s.select_provider == "anthropic" else 0.0
 
 
 def _fake() -> list[dict]:

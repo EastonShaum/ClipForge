@@ -267,3 +267,9 @@ From Easton's update brief (research report, Oct 2026) and Content Rewards' own 
 - **Pings:** budget under 20% with posts not approved; a post at 70%+ of its minimum; posts on a paid bounty unsubmitted 20 h after posting. Each once.
 - **Streams:** who pays for a streamer's clips (`campaigns.payer_type`); "nobody" isn't checked or recorded.
 - **Layouts:** speaker-left/right, split (two speakers stacked), facecam (corner or x,y,w,h %) and vary (takes turns), per bounty or per streamer.
+
+## D39. Tall screenshots are read in slices (2026-11-02)
+- Screenshots were shrunk to 1568 px on the long edge before reading. A full-page brief (Core Boys: about 1920×5100) came out 586 px wide, and the reader got `#corebhoys` for `#coreboys`.
+- Now (`stages/screenshot.py`) portrait screenshots are stored up to 1568 px **wide** at any height (`<sha>-hd.jpg`) and sent as overlapping slices top to bottom (each within the API's full-detail ~1.15 MP, 120 px overlap, at most 12, narrower if a page is taller still). The prompt says the slices are one page and to list each item once. Landscape screenshots stay one image. Scout and requirement briefs both use it.
+- Cost: a tall page is ~5–8 slices (~10K input tokens, about a cent with Haiku), logged from real usage as before.
+- Screenshots uploaded before this were stored shrunk; delete and re-upload one to get the sharp read.
