@@ -17,6 +17,6 @@ Status as of 2026-10-26. Effort is wall-clock working time.
 1. **First real run:** one real campaign plus one real source, using real keys. Review the selector's picks and tune the prompts. ~1 h with you.
 2. **Laptop worker live:** run setup on Windows and confirm fetch and render offload. ~0.5 h.
 3. **Automatic YouTube view tracking** via the Data API (free key). ~2 h.
-4. **Layouts:** speaker crop for 1-camera podcasts; facecam-over-gameplay stack for streams. ~1 day.
+4. ✅ **Layouts** (D38): speaker crop, two-speaker split, facecam over gameplay, vary.
 5. **Face-tracking crop** (stretch): OpenCV on the laptop worker. ~1–2 days.
 6. **Batch API** for selection at 50% off. Only worth it at more than 10 sources/day.

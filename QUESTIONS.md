@@ -12,3 +12,6 @@ Review these at a checkpoint. Each has a default I'm using until you answer.
 8. **Tailscale HTTPS:** enable MagicDNS + HTTPS certificates in the Tailscale admin console so I can switch to `tailscale serve`? It fixes clipboard copy on iOS. *Default: plain http plus the copy fallback.*
 9. **YouTube Data API key** (free) for automatic Shorts view counts? *Default: manual view entry.*
 10. **Face-tracking crop priority:** worth a day of work once real footage shows where blurfill looks weak? *Default: after the first 2 weeks of real reviews.*
+- **View odds (D38):** the brief's seed says 30% of posts reach 10K views, but also that the median TikTok post gets ~500. Together they give a steep jump between 500 and 10K, so Scout's expected $/clip is probably high until the accounts have 30 posts of their own. Lower `CF_VIEW_ODDS` (e.g. 10K → 10%) if the numbers look rosy.
+- **Content Rewards' real fee:** the terms say 10% (0% for per-post/retainer at $5,000+). Compare with the payouts entered on posts; change `CF_CR_FEE` if they differ.
+

@@ -7,6 +7,13 @@
     <form method="post" action="/auth/tiktok/disconnect" style="display:inline"><button class="small">Disconnect</button></form>
   {% else %}<a class="btn" href="/auth/tiktok">Connect TikTok</a> to send drafts to your inbox.{% endif %}
 </div>{% endif %}
+{% if b.ai_video_banned or b.audience_rules or b.onscreen_ad_label_required %}
+<div class="card small rules-bar">
+  {% if b.ai_video_banned %}<div><b>No AI video.</b> Post the clip as rendered: no AI effects, filters, avatars or AI voice in TikTok or CapCut.</div>{% endif %}
+  {% if b.audience_rules %}<div><b>Audience:</b> {{ b.audience_rules }}. Post from an account that meets it.</div>{% endif %}
+  {% if b.onscreen_ad_label_required %}<div><b>On-screen label:</b> burned in ("Paid partnership #ad"). Keep it visible: don't crop it out.</div>{% endif %}
+</div>
+{% endif %}
 {% if not accounts %}<div class="small muted"><a href="/accounts">Add your accounts</a> to log which one each post went to (views and posting pace are tracked per account).</div>{% endif %}
 {% for c in clips %}
 <article class="card" id="clip{{ c.id }}">
