@@ -6,6 +6,9 @@ import json
 import re
 import sqlite3
 
+from clipforge.db import utcnow
+from clipforge.money import min_views_for
+
 PLATFORMS = ("tiktok", "youtube", "instagram", "x")
 
 
@@ -35,6 +38,30 @@ def merged(conn: sqlite3.Connection, bounty_id: int) -> dict:
             out["length"].append(f"{lo:.0f}" if lo > 0 else "?")
             out["length"][-1] += f"–{hi:.0f} s" if hi > 0 else "+ s"
     return {k: list(dict.fromkeys(v)) for k, v in out.items()}
+
+
+def _terms(conn: sqlite3.Connection, bounty_id: int) -> dict:
+    """The money terms and rules the briefs state (the latest screenshot wins)."""
+    out: dict = {}
+    for r in conn.execute("SELECT extracted FROM campaign_docs WHERE bounty_id=? AND extracted"
+                          " IS NOT NULL ORDER BY id", (bounty_id,)):
+        b = json.loads(r["extracted"])
+        if b.get("campaign_type") in ("cpm", "per_post", "retainer", "prize_pool"):
+            out["campaign_type"] = b["campaign_type"]
+        for src, dst in (("rate_per_1k", "rate"), ("min_payout_usd", "min_payout_usd"),
+                         ("max_payout_usd", "cap_usd"), ("bonus_usd", "flat_fee_bonus_usd"),
+                         ("budget_total_usd", "budget_total_usd"),
+                         ("budget_remaining_usd", "budget_remaining_usd")):
+            if (b.get(src) or -1) > 0:
+                out[dst] = float(b[src])
+        for k in ("audience_rules", "footage_scope"):
+            if (b.get(k) or "").strip():
+                out[k] = b[k].strip()
+        for src, dst in (("ai_video_banned", "ai_video_banned"),
+                         ("onscreen_ad_label", "onscreen_ad_label_required")):
+            if (b.get(src) or "").lower() == "yes":
+                out[dst] = True
+    return out
 
 
 def apply(conn: sqlite3.Connection, bounty_id: int) -> list[str]:
@@ -68,6 +95,31 @@ def apply(conn: sqlite3.Connection, bounty_id: int) -> list[str]:
     if notes:
         sets["notes"] = " · ".join(filter(None, [b["notes"], *notes]))
         changes.append(f"{len(notes)} rule(s) in notes")
+    # Content Rewards terms (D38): filled in only where the bounty has nothing yet.
+    terms = _terms(conn, bounty_id)
+    for k, label in (("campaign_type", "pay type"), ("rate", "rate"),
+                     ("min_payout_usd", "minimum payout"), ("cap_usd", "max payout"),
+                     ("flat_fee_bonus_usd", "bonus"), ("budget_total_usd", "budget"),
+                     ("budget_remaining_usd", "budget left"), ("audience_rules", "audience"),
+                     ("footage_scope", "footage"), ("ai_video_banned", "AI video banned"),
+                     ("onscreen_ad_label_required", "on-screen #ad label")):
+        if k not in terms:
+            continue
+        if k == "rate":
+            if not b["rate_usd"]:
+                sets |= {"rate_usd": terms["rate"], "rate_per_views": 1000}
+                changes.append(f"rate: ${terms['rate']:g}/1K")
+        elif k == "campaign_type":
+            if b["campaign_type"] == "cpm" and terms[k] != "cpm" and not b["rate_usd"]:
+                sets[k] = terms[k]
+                changes.append(f"pay type: {terms[k]}")
+        elif not b[k]:
+            sets[k] = terms[k]
+            changes.append(label if isinstance(terms[k], bool) else f"{label}: {terms[k]}")
+    if "budget_remaining_usd" in sets:
+        sets["budget_checked_at"] = utcnow()
+    if {"min_payout_usd", "rate_usd"} & set(sets):
+        sets["min_views"] = min_views_for({**dict(b), **sets})
     for table, row_id, vals in (("bounties", bounty_id, sets),
                                 ("campaigns", c["id"], camp_sets)):
         if vals:

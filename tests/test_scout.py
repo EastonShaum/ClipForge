@@ -33,7 +33,8 @@ def test_upload_read_rank_and_prefill(client, conn, tmp_path, settings, monkeypa
     ranked = scout.ranked(conn)
     assert [b["campaign"] for b in ranked["open"]] == ["Man On", "Preme"]
     assert "crypto payout (wallet + fees)" in ranked["open"][1]["why"]
-    assert len(sent) == 1 and "1. Man On · episode-4: $125/100K, 30% filled" in sent[0]
+    assert len(sent) == 1 and "1. Man On · episode-4: $" in sent[0]
+    assert "/clip, $125/100K, 30% filled, paypal" in sent[0]
     assert conn.execute("SELECT COUNT(*) FROM api_costs WHERE stage='scout'").fetchone()[0] == 1
 
     page = client.get("/scout").text
@@ -63,3 +64,57 @@ def test_gambling_and_ended_bounties_are_set_aside(conn):
          "rate_per_views": 100000}])
     r = scout.ranked(conn)
     assert r["open"] == [] and {b["campaign"] for b in r["other"]} == {"Stake", "Tubi"}
+
+
+def test_content_rewards_cards_rank_by_expected_dollars(conn, client):
+    conn.execute("INSERT INTO scout_shots (id, sha, path) VALUES (1,'a','x')")
+    cr = {"marketplace": "content_rewards", "status": "active", "campaign_type": "cpm",
+          "rate_usd": 1.0, "rate_per_views": 1000, "category": "podcast",
+          "budget_total_usd": 20000, "budget_remaining_usd": 15000}
+    scout.store(conn, 1, [
+        {**cr, "campaign": "Pod A", "min_payout_usd": 10, "max_payout_usd": 1000},
+        {**cr, "campaign": "Pod B", "min_payout_usd": 1000},  # needs 1M views
+        {**cr, "campaign": "Pod C", "min_payout_usd": 10, "max_payout_usd": 1000,
+         "budget_remaining_usd": 200},
+        {**cr, "campaign": "Pod D", "min_payout_usd": 10, "max_payout_usd": 15},
+        {**cr, "campaign": "Kalshi", "category": "prediction market"},
+        {**cr, "campaign": "Pool", "campaign_type": "prize_pool"}])
+    r = scout.ranked(conn)
+    names = [b["campaign"] for b in r["open"]]
+    assert names[0] == "Pod A" and names.index("Pod C") > 0  # same terms, little budget
+    assert names.index("Pod B") > names.index("Pod A")  # a 1M-view minimum rarely pays
+    d = next(b for b in r["open"] if b["campaign"] == "Pod D")
+    assert any("max payout cuts" in w for w in d["why"])
+    c = next(b for b in r["open"] if b["campaign"] == "Pod C")
+    assert "only $200 budget left" in c["why"]
+    pool = next(b for b in r["open"] if b["campaign"] == "Pool")
+    assert pool["score"] == 0 and "judge it by hand" in pool["why"][0]
+    assert [b["campaign"] for b in r["other"]] == ["Kalshi"]
+    assert r["odds"].startswith("defaults")
+    page = client.get("/scout").text
+    assert "per clip" in page and "$15,000.00" in page and "budget left" in page
+    a = next(b for b in r["open"] if b["campaign"] == "Pod A")
+    assert a["prefill"]["marketplace"] == "content_rewards" and a["prefill"]["cap_usd"] == 1000
+    form = client.get("/campaigns?" + "&".join(f"{k}={v}" for k, v in a["prefill"].items()
+                                               if k in ("name", "min_payout_usd", "cap_usd")))
+    assert 'value="10.0"' in form.text and 'value="1000.0"' in form.text
+
+
+def test_brief_screenshot_fills_content_rewards_terms(conn, campaign_id):
+    import json
+
+    from clipforge import briefs
+    bid = conn.execute("SELECT id FROM bounties").fetchone()[0]
+    conn.execute("UPDATE bounties SET rate_usd=0, min_views=0, cap_usd=NULL")
+    conn.execute("INSERT INTO campaign_docs (campaign_id, bounty_id, path, sha, extracted)"
+                 " VALUES (?,?,?,?,?)", (campaign_id, bid, "d.jpg", "s", json.dumps({
+                     "campaign_type": "cpm", "rate_per_1k": 1.5, "min_payout_usd": 15,
+                     "max_payout_usd": 200, "budget_remaining_usd": 900,
+                     "audience_rules": "50%+ US", "footage_scope": "sponsor segment",
+                     "ai_video_banned": "yes", "onscreen_ad_label": "no"})))
+    changes = briefs.apply(conn, bid)
+    b = conn.execute("SELECT * FROM bounties WHERE id=?", (bid,)).fetchone()
+    assert b["rate_usd"] == 1.5 and b["rate_per_views"] == 1000 and b["min_views"] == 10_000
+    assert b["cap_usd"] == 200 and b["budget_remaining_usd"] == 900 and b["budget_checked_at"]
+    assert b["ai_video_banned"] == 1 and b["onscreen_ad_label_required"] == 0
+    assert "audience: 50%+ US" in changes and "AI video banned" in changes

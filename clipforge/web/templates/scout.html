@@ -12,30 +12,42 @@
 
 {% if pending %}<div class="card small">Reading {{ pending }} screenshot(s)… this page refreshes itself.</div>{% endif %}
 
+{% if ranked.open %}<p class="small muted">Ranked by expected dollars per clip after fees, from each bounty's minimum, rate and max payout, and the odds of a clip's views ({{ ranked.odds }}).</p>{% endif %}
 {% for b in ranked.open %}
 <article class="card">
   <div class="row">
-    <span class="score">{{ "%.0f"|format(b.score) }}</span>
-    <b>{{ b.campaign }}</b>{% if b.bounty %}<span class="muted">· {{ b.bounty }}</span>{% endif %}
-    <span class="chip">{{ b.category }}</span><span class="chip">{{ b.payout }}</span>
+    <span class="ev"><b>{{ b.ev|money }}</b><small>per clip</small></span>
+    <span style="min-width:0;flex:1"><b>{{ b.campaign }}</b>{% if b.bounty %}<span class="muted"> · {{ b.bounty }}</span>{% endif %}
+      <span class="row small" style="margin-top:4px">
+      {% if b.marketplace in marketplaces %}<span class="chip mk-{{ b.marketplace }}">{{ marketplaces[b.marketplace] }}</span>{% endif %}
+      <span class="chip">{{ b.category }}</span>{% if b.payout != 'unknown' %}<span class="chip">{{ b.payout }}</span>{% endif %}</span></span>
   </div>
+  {% if b.budget_remaining_usd is not none %}
+  <div class="row"><span class="num" style="font-size:22px">{{ b.budget_remaining_usd|money }}</span><span class="small">budget left{% if b.budget_total_usd %} of {{ b.budget_total_usd|money }}{% endif %}</span></div>
+  {% endif %}
   <div class="row small">
-    {% if b.kind == 'pot' %}<b>{{ b.pot_usd|money if b.pot_usd is not none else '?' }} pot</b>{% if b.min_views %}<span>min {{ b.min_views|num }} views</span>{% endif %}
-    {% elif b.per_100k is not none %}<b>${{ "%.0f"|format(b.per_100k) }} / 100K views</b>{% endif %}
-    {% if b.clips %}<span>{{ b.clips|num }} clips · {{ (b.views or 0)|num }} views</span>{% endif %}
-    {% if b.avg_views %}<span class="muted">~{{ b.avg_views|num }} views/clip</span>{% endif %}
+    {% set t = b.terms %}
+    {% if t.campaign_type == 'per_post' %}<b>{{ t.rate_usd|money }} per post</b>
+    {% elif t.campaign_type in ('retainer', 'prize_pool') %}<b>{{ campaign_types[t.campaign_type] }}{% if b.pot_usd %}: {{ b.pot_usd|money }}{% endif %}</b>
+    {% elif b.per_1k is not none %}<b>{{ b.per_1k|money }} / 1K views</b>{% endif %}
+    {% if t.min_views %}<span>min {{ t.min_views|num }} views{% if b.min_payout_usd %} ({{ b.min_payout_usd|money }}){% endif %}</span>{% endif %}
+    {% if b.max_payout_usd %}<span>max {{ b.max_payout_usd|money }}/clip ({{ cap_views(t)|num }} views)</span>{% endif %}
+    {% if b.bonus_usd %}<span>+{{ b.bonus_usd|money }} bonus</span>{% endif %}
+    {% if b.end_date %}<span>ends {{ b.end_date }}</span>{% endif %}
+    {% if b.clips %}<span class="muted">{{ b.clips|num }} clips · {{ (b.views or 0)|num }} views</span>{% endif %}
   </div>
   {% if b.filled_pct is not none %}
   <div class="bar {{ 'paused' if b.filled_pct >= 90 else 'warn' if b.filled_pct >= 60 }}"><i style="width:{{ b.filled_pct }}%"></i></div>
-  <div class="small">{{ "%.0f"|format(b.filled_pct) }}% filled
-    {% if b.speed is not none %} · +{{ "%.1f"|format(b.speed) }}%/day{% if b.days_left is not none %}, full in ~{{ "%.0f"|format(b.days_left) }} days{% endif %}
+  <div class="small">{{ "%.0f"|format(b.filled_pct) }}% of the budget used
+    {% if b.speed is not none %} · +{{ "%.1f"|format(b.speed) }}%/day{% if b.days_left is not none %}, gone in ~{{ "%.0f"|format(b.days_left) }} days{% endif %}
     {% elif b.readings < 2 %}<span class="muted"> · upload again tomorrow to see how fast it fills</span>{% endif %}</div>
   {% endif %}
   {% if b.why %}<div class="small" style="color:var(--warn)">{{ b.why|join(' · ') }}</div>{% endif %}
+  {% if b.footage_scope %}<div class="small">Footage: {{ b.footage_scope }}</div>{% endif %}
   {% if b.notes %}<div class="small muted">{{ b.notes }}</div>{% endif %}
   <div class="row small">
     <span class="muted">seen {{ b.seen_at|local('d') }}</span>
-    {% set add = "/campaigns?name=" ~ b.campaign|urlencode ~ "&bounty_name=" ~ (b.bounty or 'main')|urlencode ~ "&category=" ~ (b.category if b.category in ['podcast','interview','gaming','streamer'] else 'other') ~ ("&rate_usd=" ~ b.rate_usd ~ "&rate_mode=" ~ b.rate_per_views if b.kind == 'rate' and b.rate_usd is not none else "") ~ "&notes=" ~ ('from Scout, payout ' ~ b.payout)|urlencode %}
+    {% set add = "/campaigns?" ~ b.prefill|urlencode %}
     <a class="btn small" href="{{ add }}#add">Add as bounty</a>
     <a class="btn small" href="{{ add }}&live=1#add">Add &amp; clip live</a>
   </div>
