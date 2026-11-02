@@ -6,8 +6,8 @@ from zoneinfo import ZoneInfo
 
 from clipforge import money
 from clipforge.bounties import label
-from clipforge.config import get_settings
 from clipforge.campaigns import effective_per_1k, estimate_payout
+from clipforge.config import get_settings
 
 POST_VIEWS = """
     SELECT p.id post_id, p.platform, p.clip_id, p.account_id, p.review_status, p.earned_usd,
