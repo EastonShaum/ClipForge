@@ -3,7 +3,7 @@
 {% block content %}
 {% include "_bounty_head.html" %}
 {% set cr = c.marketplace == 'content_rewards' %}
-<p class="small muted">{% if cr %}Content Rewards takes one submission per video: copy its link, open the campaign page, submit, then mark it here. {% else %}Each post: fix its link, mark it submitted on the campaign site, {% endif %}Log views as they grow (each entry is a snapshot).
+<p class="small muted">{% if cr %}Content Rewards takes one submission per video: copy its link, open the campaign page, submit, then mark it here. {% else %}Each post: fix its link and mark it submitted on the campaign site. {% endif %}Log views as they grow (each entry is a snapshot).
   {% if b.min_views %}Pays from {{ b.min_views|num }} views.{% endif %}</p>
 {% set all_posts = clips|map(attribute='posts')|sum(start=[]) %}
 {% set unsent = all_posts|rejectattr('submitted_at')|list %}
@@ -56,13 +56,13 @@
       <form method="post" action="/posts/{{ p.id }}/submitted"><input type="hidden" name="next" value="{{ nxt }}"><button class="small" name="undo" value="1">undo</button></form>
     </div>
     {% if p.review_status in (none, 'pending') %}
-    <div class="row">
-      <form method="post" action="/posts/{{ p.id }}/review" class="row" style="flex:1">
+    <div class="review-forms">
+      <form method="post" action="/posts/{{ p.id }}/review" class="row review-form">
         <input type="hidden" name="next" value="{{ nxt }}"><input type="hidden" name="step" value="approved">
         <input name="approved_views" type="number" min="0" inputmode="numeric" placeholder="Views at approval" style="flex:1">
         <button class="go small">Approved</button>
       </form>
-      <form method="post" action="/posts/{{ p.id }}/review" class="row" style="flex:1">
+      <form method="post" action="/posts/{{ p.id }}/review" class="row review-form">
         <input type="hidden" name="next" value="{{ nxt }}"><input type="hidden" name="step" value="rejected">
         <input name="reason" placeholder="Brand's reason" style="flex:1" required>
         <button class="small">Rejected</button>

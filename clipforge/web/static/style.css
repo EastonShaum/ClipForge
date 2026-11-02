@@ -192,3 +192,6 @@ fieldset.plats legend { font-size: 14px; font-weight: 600; color: var(--muted); 
   background: var(--accent); color: var(--accent-fg) }
 .ev b { font-family: var(--display); font-size: 20px; font-variant-numeric: tabular-nums }
 .ev small { font-size: 11px; opacity: .85 }
+.review-forms { display: grid; gap: 8px }
+.review-form input { flex: 1; min-width: 0 }
+.review-form button { min-width: 112px }
