@@ -141,13 +141,66 @@ def held_messages(conn: sqlite3.Connection, s: Settings, now_utc: datetime) -> l
     return out
 
 
+SUBMIT_WITHIN = timedelta(hours=20)  # ping before a post is a day old and still unsubmitted
+
+
+def money_messages(conn: sqlite3.Connection, s: Settings, now_utc: datetime) -> list[str]:
+    """D38, each once: a bounty's budget under budget_low_ratio while its posts wait for
+    approval; a post near its minimum views (worth replying to comments or posting elsewhere);
+    posts on a paid bounty not submitted 20 h after posting."""
+    out = []
+    base = s.public_base_url
+    for b in conn.execute(
+            f"""SELECT b.*, {LABEL} label, COUNT(p.id) waiting FROM bounties b
+                JOIN campaigns cp ON cp.id=b.campaign_id
+                JOIN sources src ON src.bounty_id=b.id JOIN candidates c ON c.source_id=src.id
+                JOIN clips k ON k.candidate_id=c.id JOIN posts p ON p.clip_id=k.id
+                WHERE b.status='active' AND b.budget_remaining_usd IS NOT NULL
+                  AND b.budget_total_usd > 0
+                  AND b.budget_remaining_usd < b.budget_total_usd * ?
+                  AND COALESCE(p.review_status, 'pending')='pending'
+                GROUP BY b.id""", (s.budget_low_ratio,)):
+        if _once(conn, f"budget-low:{b['id']}:{b['budget_checked_at']}"):
+            out.append(f"💸 **{b['label']}: ${b['budget_remaining_usd']:,.0f} budget left** of"
+                       f" ${b['budget_total_usd']:,.0f}, with {b['waiting']} post(s) not approved"
+                       " yet. Submit the rest now, and check the budget again: "
+                       f"{base}/campaigns/{b['campaign_id']}/bounties/{b['id']}/posted")
+    for p in conn.execute(
+            f"""SELECT p.id, p.platform, p.url, {LABEL} label, b.min_views, cp.id cid, b.id bid,
+                       (SELECT MAX(views) FROM view_snapshots v WHERE v.post_id=p.id) views
+                FROM posts p JOIN clips k ON k.id=p.clip_id JOIN candidates c
+                ON c.id=k.candidate_id JOIN sources src ON src.id=c.source_id
+                JOIN bounties b ON b.id=src.bounty_id JOIN campaigns cp ON cp.id=b.campaign_id
+                WHERE b.min_views > 0 AND COALESCE(p.review_status, '') != 'rejected'"""):
+        if p["views"] and p["min_views"] * s.near_min_ratio <= p["views"] < p["min_views"] \
+                and _once(conn, f"near-min:{p['id']}"):
+            out.append(f"📈 **A {p['platform']} post for {p['label']} is at {p['views']:,} of"
+                       f" {p['min_views']:,} views**, close to paying. Reply to its comments, or"
+                       f" post the clip on another platform: {p['url']}")
+    cutoff = (now_utc - SUBMIT_WITHIN).strftime("%Y-%m-%dT%H:%M:%SZ")
+    late = [p for p in conn.execute(
+        f"""SELECT p.id, p.platform, p.url, {LABEL} label, cp.id cid, b.id bid FROM posts p
+            JOIN clips k ON k.id=p.clip_id JOIN candidates c ON c.id=k.candidate_id
+            JOIN sources src ON src.id=c.source_id JOIN bounties b ON b.id=src.bounty_id
+            JOIN campaigns cp ON cp.id=b.campaign_id
+            WHERE p.submitted_at IS NULL AND p.posted_at < ? AND b.live_session_id IS NULL
+              AND b.status='active'""", (cutoff,)) if _once(conn, f"submit-24h:{p['id']}")]
+    if late:
+        lines = [f"⏰ **{len(late)} post(s) still not submitted, posted 20+ h ago.** Submit each"
+                 " before it's a day old:"]
+        lines += [f"• {p['label']} ({p['platform']}): {base}/campaigns/{p['cid']}/bounties/"
+                  f"{p['bid']}/posted#post{p['id']}" for p in late]
+        out.append("\n".join(lines))
+    return out
+
+
 def tick(conn: sqlite3.Connection, now_utc: datetime | None = None) -> list[str]:
     """Send whatever reminders are due. Returns what was sent (for tests and logs)."""
     s = get_settings()
     now_utc = now_utc or datetime.now(ZoneInfo("UTC"))
     local = now_utc.astimezone(ZoneInfo(s.timezone))
     sent = []
-    for msg in held_messages(conn, s, now_utc):
+    for msg in held_messages(conn, s, now_utc) + money_messages(conn, s, now_utc):
         notify.discord(msg)
         sent.append(msg)
     due = [("slot", t) for t in s.post_slots] + [("digest", s.digest_time)]

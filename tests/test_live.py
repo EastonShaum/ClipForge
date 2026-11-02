@@ -299,3 +299,17 @@ def test_a_gaming_streamer_can_be_set_to_full_width(client, conn):
                                                 "live_layout": "blurfill"})
     assert build_context(conn, get_settings(), job)["layout"] == "blurfill"
     assert 'value="blurfill" selected' in client.get("/lives?tab=streamers").text
+
+
+def test_a_streamer_nobody_pays_for_is_not_recorded(client, conn):
+    client.post("/lives/watch", data={"name": "N3on", "live_channels": "kick.com/n3on"})
+    cid = conn.execute("SELECT id FROM campaigns").fetchone()[0]
+    client.post(f"/campaigns/{cid}/live", data={"live_channels": "kick.com/n3on",
+                                                "watch_live": "true", "payer_type": "none"})
+    assert live.check(conn, _probe({"kick.com/n3on": {"id": "1", "title": "t"}})) == []
+    assert not conn.execute("SELECT 1 FROM live_sessions").fetchone()
+    assert "nobody pays" in client.get("/lives?tab=streamers").text
+    client.post(f"/campaigns/{cid}/live", data={"live_channels": "kick.com/n3on",
+                                                "watch_live": "true", "payer_type": "sponsor"})
+    live.check(conn, _probe({"kick.com/n3on": {"id": "1", "title": "t"}}))
+    assert conn.execute("SELECT 1 FROM live_sessions").fetchone()

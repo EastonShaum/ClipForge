@@ -240,9 +240,12 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
     @app.get("/lives")
     def lives(request: Request, conn: DB, msg: str = "", tab: str = "streams"):
         streamers = []
-        for c in live.watched(conn) + [r for r in conn.execute(
-                "SELECT * FROM campaigns WHERE status='active' AND watch_live=0"
-                " AND live_channels!='' ORDER BY id")]:
+        # Watched ones first, then those with channels but watching off (or nobody pays).
+        rows = {c["id"]: c for c in live.watched(conn)}
+        for c in conn.execute("SELECT * FROM campaigns WHERE status='active' AND"
+                              " (watch_live=1 OR live_channels!='') ORDER BY id"):
+            rows.setdefault(c["id"], c)
+        for c in rows.values():
             streamers.append({**dict(c), "channels": [
                 (ch, live.channel_url(ch), live.channel_status(conn, ch))
                 for ch in live.parse_channels(c["live_channels"])[0]]})
@@ -403,7 +406,8 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
     @app.get("/")
     def home(request: Request, conn: DB, msg: str = ""):
         return page(request, "home.html", n=inbox.needs_you(conn), msg=msg,
-                    streams=[r for r in live.sessions(conn, limit=5) if r["state"] == "live"])
+                    streams=[r for r in live.sessions(conn, limit=5) if r["state"] == "live"],
+                    pace=posting.cadence(conn))
 
     # The old top-level pages (and older Discord links) jump to the bounty that needs it.
     @app.get("/review")
@@ -847,15 +851,18 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
 
     @app.post("/campaigns/{cid}/live")
     def campaign_live(cid: int, conn: DB, live_channels: str = Form(""),
-                      watch_live: bool = Form(False), live_layout: str = Form("")):
+                      watch_live: bool = Form(False), live_layout: str = Form(""),
+                      payer_type: str = Form("")):
         _camp_or_404(conn, cid)
         chans, bad = live.parse_channels(live_channels)
         if bad:
             return back("/lives?tab=streamers", f"Not a Kick or Twitch channel:"
                         f" {' '.join(bad)} (use e.g. kick.com/n3on)")
-        conn.execute("UPDATE campaigns SET live_channels=?, watch_live=?, live_layout=? WHERE id=?",
+        conn.execute("UPDATE campaigns SET live_channels=?, watch_live=?, live_layout=?,"
+                     " payer_type=? WHERE id=?",
                      (" ".join(chans), int(watch_live),
-                      live_layout if live_layout in ("blurfill", "crop") else None, cid))
+                      live_layout if live_layout in ("blurfill", "crop") else None,
+                      payer_type if payer_type in money.PAYER_TYPES else None, cid))
         return back("/lives?tab=streamers", "Saved. Channels are checked every"
                     f" {s.live_check_s // 60} min.")
 

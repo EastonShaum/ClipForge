@@ -105,9 +105,11 @@ def channel_status(conn: sqlite3.Connection, channel: str) -> dict | None:
 
 
 def watched(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    """Active campaigns to check: watching is on, or a bounty clips their live streams."""
+    """Active campaigns to check: watching is on, or a bounty clips their live streams. Not a
+    streamer nobody pays for (payer_type 'none', D38): recording them only costs disk."""
     return conn.execute(
-        """SELECT * FROM campaigns c WHERE c.status='active' AND (c.watch_live=1 OR EXISTS
+        """SELECT * FROM campaigns c WHERE c.status='active'
+             AND COALESCE(c.payer_type, '') != 'none' AND (c.watch_live=1 OR EXISTS
                (SELECT 1 FROM bounties b WHERE b.campaign_id=c.id AND b.live_clip=1
                 AND b.status='active')) ORDER BY c.id""").fetchall()
 

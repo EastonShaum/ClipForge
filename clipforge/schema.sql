@@ -305,9 +305,3 @@ CREATE TABLE IF NOT EXISTS work_log (
     note            TEXT NOT NULL DEFAULT '',
     created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
-
--- Discord pings that must go out once (a post near its minimum, a low budget...).
-CREATE TABLE IF NOT EXISTS pings (
-    key             TEXT PRIMARY KEY,
-    sent_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
-);

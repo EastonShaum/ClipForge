@@ -5,6 +5,9 @@
 <h1>Needs you</h1>
 <p class="lede">{% if total %}{{ total }} clip{{ 's' if total != 1 }} across {{ (n.review + n.post)|map(attribute='bid')|unique|list|length }} bount{{ 'ies' if ((n.review + n.post)|map(attribute='bid')|unique|list|length) != 1 else 'y' }}{% else %}You're caught up.{% endif %}</p>
 
+{% if pace %}
+<div class="row small pace">{% for a in pace %}<a class="chip {{ 'ok' if a.posted >= a.target }}" href="/accounts">{{ platform_names[a.platform] }} {{ a.posted }}/{{ a.target }} today</a>{% endfor %}</div>
+{% endif %}
 {% set top = n.review[0] if n.review else none %}
 {% if top %}
 <a class="hero" href="/campaigns/{{ top.cid }}/bounties/{{ top.bid }}/review">
