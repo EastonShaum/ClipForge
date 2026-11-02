@@ -7,18 +7,27 @@
     <form method="post" action="/auth/tiktok/disconnect" style="display:inline"><button class="small">Disconnect</button></form>
   {% else %}<a class="btn" href="/auth/tiktok">Connect TikTok</a> to send drafts to your inbox.{% endif %}
 </div>{% endif %}
+{% if not accounts %}<div class="small muted"><a href="/accounts">Add your accounts</a> to log which one each post went to (views and posting pace are tracked per account).</div>{% endif %}
 {% for c in clips %}
 <article class="card" id="clip{{ c.id }}">
   <div class="row"><span class="chip">post to: {{ c.todo|join(', ') }}</span>
     {% for p in c.posts %}<span class="chip">✓ {{ p.platform }}</span>{% endfor %}</div>
+  {% if c.same_hook %}<div class="small status-failed">A posted clip already used this hook. Write a new one before posting: each clip's on-screen text should be its own.</div>{% endif %}
   <div class="row"><span class="hook" style="flex:1">{{ c.hook_text }}</span>
     <button type="button" class="big" data-hook="{{ c.hook_text }}"
             onclick="copyValue(this.dataset.hook, this)">Copy on-screen text</button></div>
   <video src="/media/clips/{{ c.path }}" controls playsinline preload="metadata"></video>
   <div class="row">
     <a class="btn go big" href="/media/clips/{{ c.path }}" download="clip{{ c.id }}.mp4">Save video</a>
-    <button type="button" class="big" onclick="copyText('cap{{ c.id }}', this)">Copy caption</button>
+    {% if not c.problems %}<button type="button" class="big" onclick="copyText('cap{{ c.id }}', this)">Copy caption</button>{% endif %}
   </div>
+  {% if c.problems %}
+  <form method="post" action="/clips/{{ c.id }}/caption/fix" class="row caption-check">
+    <input type="hidden" name="next" value="{{ here }}">
+    <span class="small status-failed" style="flex:1">Caption not ready: {{ c.problems|join('; ') }}.</span>
+    <button class="go small">Fix caption</button>
+  </form>
+  {% endif %}
   {% if tt.connected and 'tiktok' in c.todo %}{% set u = tt.uploads.get(c.id) %}
   <div class="row">
     <form method="post" action="/clips/{{ c.id }}/tiktok"><input type="hidden" name="next" value="{{ here }}">
@@ -38,9 +47,16 @@
   </details>
   <form method="post" action="/clips/{{ c.id }}/post" class="grid2">
     <input type="hidden" name="next" value="{{ here }}">
+    {% set accts = accounts|selectattr('platform', 'in', c.todo or platforms)|list %}
+    {% if accts %}
+    <label>Account
+      <select name="account_id">{% for a in accts %}<option value="{{ a.id }}">{{ platform_names[a.platform] }} {{ a.handle }}</option>{% endfor %}</select>
+    </label>
+    {% else %}
     <label>Platform
       <select name="platform">{% for p in platforms %}<option {{ 'selected' if c.todo and p == c.todo[0] }}>{{ p }}</option>{% endfor %}</select>
     </label>
+    {% endif %}
     <label>Post URL <input name="url" type="url" placeholder="https://www.tiktok.com/@…/video/…" required></label>
     <button class="go">Log post</button>
   </form>

@@ -31,6 +31,7 @@ from clipforge import (
     money,
     notify,
     pipeline,
+    posting,
     scout,
     storage,
     tiktok,
@@ -135,7 +136,7 @@ def _live_now() -> bool:
 
 
 templates.env.globals["live_now"] = _live_now
-templates.env.globals |= {"marketplaces": money.MARKETPLACES,
+templates.env.globals |= {"marketplaces": money.MARKETPLACES, "payout": money.payout,
                           "campaign_types": money.CAMPAIGN_TYPES,
                           "payer_types": money.PAYER_TYPES, "cap_views": money.cap_views,
                           "all_platforms": ["tiktok", "youtube", "instagram", "x"],
@@ -446,7 +447,18 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         # Approved clips, plus posted ones that still have an allowed platform to go.
         clips = _clip_rows(conn, "approved", bid) + [
             r for r in _clip_rows(conn, "posted", bid) if r["todo"]]
+        b = _bounty_or_404(conn, cid, bid)
+        c = _camp_or_404(conn, cid)
+        tags = f"{c['required_tags']} {b['required_tags']}"
+        posted_hooks = {r[0].strip().lower() for r in conn.execute(
+            "SELECT DISTINCT ca.hook_text FROM posts p JOIN clips k ON k.id=p.clip_id JOIN"
+            " candidates ca ON ca.id=k.candidate_id")}
+        for k in clips:
+            k["problems"] = posting.caption_problems(k["caption"], tags, c["disclosure"])
+            k["same_hook"] = not k["posts"] and k["hook_text"].strip().lower() in posted_hooks
+        accts = [a for a in posting.accounts(conn, enabled_only=True)]
         return _tab(request, conn, cid, bid, "post", clips=clips, platforms=PLATFORMS,
+                    accounts=accts,
                     reminders=PLATFORM_REMINDER, msg=msg,
                     tt={"configured": tiktok.configured(s), "connected": bool(tiktok.auth(conn)),
                         "uploads": tiktok.latest_uploads(conn, [c["id"] for c in clips])})
@@ -454,7 +466,8 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
     @app.get("/campaigns/{cid}/bounties/{bid}/posted")
     def bounty_posted(request: Request, cid: int, bid: int, conn: DB, msg: str = ""):
         return _tab(request, conn, cid, bid, "posted", clips=_clip_rows(conn, "posted", bid),
-                    platforms=PLATFORMS, msg=msg)
+                    platforms=PLATFORMS, accounts=posting.accounts(conn, enabled_only=True),
+                    handles={a["id"]: a["handle"] for a in posting.accounts(conn)}, msg=msg)
 
     @app.post("/clips/{clip_id}/review")
     def decide(clip_id: int, conn: DB, decision: str = Form(...),
@@ -490,15 +503,22 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         return None
 
     @app.post("/clips/{clip_id}/post")
-    def log_post(clip_id: int, conn: DB, platform: str = Form(...), url: str = Form(...),
-                 next: str = Form("")):
+    def log_post(clip_id: int, conn: DB, platform: str = Form(""), url: str = Form(...),
+                 account_id: str = Form(""), next: str = Form("")):
         to = _next(next, "/approved")
+        acct = conn.execute("SELECT * FROM accounts WHERE id=?",
+                            (int(account_id),)).fetchone() if account_id.isdigit() else None
+        platform = acct["platform"] if acct else platform
         if err := _post_fields(platform, url):
             return back(to, err)
+        if other := posting.already_posted(conn, clip_id, platform):
+            return back(to, f"Not logged: clip #{other} already put this moment on {platform}."
+                        " Post this one somewhere else.")
         try:
             with tx(conn):
-                conn.execute("INSERT INTO posts (clip_id, platform, url) VALUES (?,?,?)",
-                             (clip_id, platform, url.strip()))
+                conn.execute("INSERT INTO posts (clip_id, platform, url, account_id)"
+                             " VALUES (?,?,?,?)",
+                             (clip_id, platform, url.strip(), acct["id"] if acct else None))
                 conn.execute("UPDATE clips SET status='posted' WHERE id=?", (clip_id,))
         except sqlite3.IntegrityError:
             return back(to, "That URL is already logged")
@@ -531,9 +551,59 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
 
     @app.post("/posts/{post_id}/submitted")
     def mark_submitted(post_id: int, conn: DB, undo: str = Form(""), next: str = Form("")):
-        conn.execute("UPDATE posts SET submitted_at=? WHERE id=?",
-                     (None if undo else utcnow(), post_id))
-        return back(_next(next, "/posts"), "Marked not submitted" if undo else "Marked submitted")
+        conn.execute("UPDATE posts SET submitted_at=?, review_status=? WHERE id=?",
+                     (None, None, post_id) if undo else (utcnow(), "pending", post_id))
+        return back(_next(next, "/posts"), "Marked not submitted" if undo else
+                    "Marked submitted: now waiting for the brand's review")
+
+    @app.post("/posts/{post_id}/review")
+    def post_review(post_id: int, conn: DB, step: str = Form(...), reason: str = Form(""),
+                    approved_views: str = Form(""), earned_usd: str = Form(""),
+                    next: str = Form("")):
+        to = _next(next, "/posts")
+        try:
+            msg = posting.set_review(
+                conn, post_id, step, reason=reason,
+                approved_views=int(_num(approved_views)) if _num(approved_views) else None,
+                earned_usd=_num(earned_usd))
+        except ValueError as e:
+            return back(to, str(e))
+        return back(to, msg)
+
+    @app.get("/accounts")
+    def accounts_page(request: Request, conn: DB, msg: str = ""):
+        return page(request, "accounts.html", accounts=posting.accounts(conn),
+                    today=posting.cadence(conn), msg=msg)
+
+    @app.post("/accounts")
+    def accounts_add(conn: DB, platform: str = Form(...), handle: str = Form(...),
+                     niche: str = Form("")):
+        if platform not in PLATFORMS:
+            return back("/accounts", "Pick a platform")
+        try:
+            posting.add_account(conn, platform, handle, niche)
+        except ValueError as e:
+            return back("/accounts", str(e))
+        return back("/accounts", "Account added" + (
+            ": off for now (Instagram stops recommending accounts that mostly repost)"
+            if platform == "instagram" else ""))
+
+    @app.post("/accounts/{account_id}/enabled")
+    def accounts_enable(account_id: int, conn: DB, on: str = Form(...)):
+        conn.execute("UPDATE accounts SET enabled=? WHERE id=?", (int(on == "1"), account_id))
+        return back("/accounts", "Turned on" if on == "1" else "Turned off")
+
+    @app.post("/clips/{clip_id}/caption/fix")
+    def fix_caption(clip_id: int, conn: DB, next: str = Form("")):
+        r = conn.execute(
+            "SELECT k.caption, cp.required_tags ct, b.required_tags bt, cp.disclosure FROM clips k"
+            " JOIN candidates c ON c.id=k.candidate_id JOIN sources s ON s.id=c.source_id"
+            " JOIN campaigns cp ON cp.id=s.campaign_id LEFT JOIN bounties b ON b.id=s.bounty_id"
+            " WHERE k.id=?", (clip_id,)).fetchone()
+        if r:
+            conn.execute("UPDATE clips SET caption=? WHERE id=?", (posting.fix_caption(
+                r["caption"], f"{r['ct']} {r['bt'] or ''}", r["disclosure"]), clip_id))
+        return back(_next(next, "/approved") + f"#clip{clip_id}", "Caption fixed")
 
     @app.post("/clips/{clip_id}/unreview")
     def unreview(clip_id: int, conn: DB, next: str = Form("")):

@@ -33,7 +33,7 @@ catch (e) { document.documentElement.dataset.theme = 'light'; }
     <svg viewBox="0 0 22 22" aria-hidden="true"><circle cx="11" cy="11" r="3"/><path d="M5 5a8.5 8.5 0 000 12M17 5a8.5 8.5 0 010 12"/></svg><span class="{{ 'dot' if live_now() }}">Lives</span></a>
   <a href="/scout" class="{{ 'on' if active == 'scout' }}" {{ 'aria-current=page' if active == 'scout' }}>
     <svg viewBox="0 0 22 22" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="M15 15l4 4"/></svg>Scout</a>
-  <a href="/dashboard" class="{{ 'on' if active == 'dashboard' }}" {{ 'aria-current=page' if active == 'dashboard' }}>
+  <a href="/dashboard" class="{{ 'on' if active in ('dashboard', 'accounts') }}" {{ 'aria-current=page' if active in ('dashboard', 'accounts') }}>
     <svg viewBox="0 0 22 22" aria-hidden="true"><path d="M4 18V9M10 18V4M16 18v-6"/></svg>Stats</a>
 </nav>
 <script>

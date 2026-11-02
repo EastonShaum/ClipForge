@@ -183,3 +183,8 @@ button.danger { color: var(--bad); border-color: currentColor }
 .budget > div { flex-basis: 100% }
 fieldset.plats { border: 0; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 0 14px }
 fieldset.plats legend { font-size: 14px; font-weight: 600; color: var(--muted); padding: 0 }
+.submit-steps { margin: 0; padding-left: 22px; display: grid; gap: 6px }
+.submit-steps li::marker { color: var(--muted); font-weight: 700 }
+.chip.ok { background: var(--accent); color: var(--accent-fg) }
+.chip.bad { background: var(--bad); color: #fff }
+.caption-check { background: var(--chip); border-radius: 12px; padding: 8px 12px }

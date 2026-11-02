@@ -2,11 +2,12 @@
 {% block title %}Posted · {{ b.name }} · ClipForge{% endblock %}
 {% block content %}
 {% include "_bounty_head.html" %}
-<p class="small muted">Each post: fix its link, mark it submitted on the campaign site, and log views as they grow (each entry is a snapshot).
+{% set cr = c.marketplace == 'content_rewards' %}
+<p class="small muted">{% if cr %}Content Rewards takes one submission per video: copy its link, open the campaign page, submit, then mark it here. {% else %}Each post: fix its link, mark it submitted on the campaign site, {% endif %}Log views as they grow (each entry is a snapshot).
   {% if b.min_views %}Pays from {{ b.min_views|num }} views.{% endif %}</p>
 {% set all_posts = clips|map(attribute='posts')|sum(start=[]) %}
 {% set unsent = all_posts|rejectattr('submitted_at')|list %}
-{% if all_posts %}
+{% if all_posts and not cr %}
 <div class="row">
   <button type="button" class="go" data-links="{{ all_posts|map(attribute='url')|join('\n') }}"
           onclick="copyValue(this.dataset.links, this)">Copy all {{ all_posts|length }} links</button>
@@ -25,7 +26,7 @@
   {% for p in c.posts %}
   <div class="post" id="post{{ p.id }}">
     <div class="row small">
-      <span class="chip">{{ p.platform }}</span>
+      <span class="chip">{{ platform_names.get(p.platform, p.platform) }}{% if p.account_id %} {{ handles.get(p.account_id, '') }}{% endif %}</span>
       <a href="{{ p.url }}" target="_blank" rel="noopener">open</a>
       <span class="score">{{ p.views|num if p.views is not none else '–' }} views</span>
       {% if b.min_views and (p.views or 0) >= b.min_views %}<span class="chip">qualifies</span>{% endif %}
@@ -37,11 +38,43 @@
       <input name="likes" type="number" min="0" inputmode="numeric" placeholder="Likes" style="flex:1">
       <button class="go">Save views</button>
     </form>
-    <form method="post" action="/posts/{{ p.id }}/submitted" class="row small">
-      <input type="hidden" name="next" value="{{ here }}#post{{ p.id }}">
-      {% if p.submitted_at %}<span class="chip">submitted ✓</span><button class="small" name="undo" value="1">undo</button>
-      {% else %}<button class="go small">Mark submitted</button>{% endif %}
+    {% set nxt = here ~ '#post' ~ p.id %}
+    {% if not p.submitted_at %}
+    <ol class="submit-steps">
+      <li><button type="button" class="small" data-link="{{ p.url }}" onclick="copyValue(this.dataset.link, this)">Copy link</button></li>
+      <li>{% if b.brief_url %}<a class="btn small" href="{{ b.brief_url }}" target="_blank" rel="noopener">Open campaign page ↗</a>{% else %}<span class="small muted">Open the campaign page (add its link in Bounty settings)</span>{% endif %}</li>
+      <li><form method="post" action="/posts/{{ p.id }}/submitted"><input type="hidden" name="next" value="{{ nxt }}"><button class="go small">Mark submitted</button></form></li>
+    </ol>
+    {% else %}
+    {% set est = payout(b, p.views or 0) %}
+    <div class="review-step row small">
+      {% if p.review_status == 'paid' %}<span class="chip ok">Paid {{ p.earned_usd|money }}</span><span class="muted">{{ p.paid_at|local('d') }}</span>
+      {% elif p.review_status == 'approved' %}<span class="chip ok">Approved{% if p.approved_views %} at {{ p.approved_views|num }} views{% endif %}</span><span class="muted">about {{ est|money }} so far</span>
+      {% elif p.review_status == 'rejected' %}<span class="chip bad">Rejected</span><span>{{ p.reject_reason }}</span>
+      {% else %}<span class="chip">Submitted {{ p.submitted_at|local('d') }}, waiting for review</span>{% endif %}
+      <form method="post" action="/posts/{{ p.id }}/submitted"><input type="hidden" name="next" value="{{ nxt }}"><button class="small" name="undo" value="1">undo</button></form>
+    </div>
+    {% if p.review_status in (none, 'pending') %}
+    <div class="row">
+      <form method="post" action="/posts/{{ p.id }}/review" class="row" style="flex:1">
+        <input type="hidden" name="next" value="{{ nxt }}"><input type="hidden" name="step" value="approved">
+        <input name="approved_views" type="number" min="0" inputmode="numeric" placeholder="Views at approval" style="flex:1">
+        <button class="go small">Approved</button>
+      </form>
+      <form method="post" action="/posts/{{ p.id }}/review" class="row" style="flex:1">
+        <input type="hidden" name="next" value="{{ nxt }}"><input type="hidden" name="step" value="rejected">
+        <input name="reason" placeholder="Brand's reason" style="flex:1" required>
+        <button class="small">Rejected</button>
+      </form>
+    </div>
+    {% elif p.review_status == 'approved' %}
+    <form method="post" action="/posts/{{ p.id }}/review" class="row">
+      <input type="hidden" name="next" value="{{ nxt }}"><input type="hidden" name="step" value="paid">
+      <label style="flex:1">Paid ($, what landed) <input name="earned_usd" type="number" step="0.01" min="0" value="{{ '%.2f'|format(est) }}" required></label>
+      <button class="go small">Mark paid</button>
     </form>
+    {% endif %}
+    {% endif %}
     <details class="small">
       <summary>Edit link</summary>
       <form method="post" action="/posts/{{ p.id }}/edit" class="grid2" style="margin-top:8px">

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Accounts · ClipForge{% endblock %}
+{% block content %}
+<h1>Accounts</h1>
+<p class="lede">Where you post. Views, payout odds and the posting pace are tracked per account. Keep one account per niche: podcasts and soccer on one, streamers on another.</p>
+
+{% if today %}
+<h2>Today</h2>
+<div class="list">
+  {% for a in today %}
+  <div class="row" style="padding:12px 16px">
+    <span class="num">{{ a.posted }}/{{ a.target }}</span>
+    <span style="min-width:0"><strong>{{ platform_names[a.platform] }} {{ a.handle }}</strong><small class="muted" style="display:block">{{ a.why }}</small></span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<h2>All accounts</h2>
+{% for a in accounts %}
+<section class="card">
+  <div class="row"><strong>{{ platform_names[a.platform] }} {{ a.handle }}</strong>
+    {% if a.niche %}<span class="chip">{{ a.niche }}</span>{% endif %}
+    <span class="small muted">since {{ a.started_at }}</span></div>
+  <form method="post" action="/accounts/{{ a.id }}/enabled" class="switch" aria-label="Post to this account">
+    <span class="small">Posting</span>
+    <label><input type="radio" name="on" value="1" {{ 'checked' if a.enabled }} onchange="this.form.submit()"> On</label>
+    <label><input type="radio" name="on" value="0" {{ 'checked' if not a.enabled }} onchange="this.form.submit()"> Off</label>
+  </form>
+  {% if a.platform == 'instagram' %}<div class="small muted">Instagram stops recommending accounts whose last 30 days are mostly reposts. Turn it on only with original edits.</div>{% endif %}
+</section>
+{% else %}
+<div class="small muted">No accounts yet.</div>
+{% endfor %}
+
+<section class="card">
+  <h2>Add an account</h2>
+  <form method="post" action="/accounts" class="grid2">
+    <label>Platform <select name="platform">{% for p in all_platforms %}<option value="{{ p }}">{{ platform_names[p] }}</option>{% endfor %}</select></label>
+    <label>Handle <input name="handle" required placeholder="@easton.clips"></label>
+    <label>Niche <input name="niche" placeholder="podcasts & soccer"></label>
+    <button class="go small">Add</button>
+  </form>
+</section>
+{% endblock %}

@@ -34,6 +34,7 @@ def test_tabs_show_only_this_bountys_clips(client, conn):
 
 def test_edit_remove_and_add_post_links(client, conn):
     client.post("/campaigns", data={"name": "N3on", "bounty_name": "lizzo", "rate_usd": "150",
+                                    "marketplace": "clipping_net",
                                     "rate_mode": "100000", "min_views": "50000",
                                     "allowed_platforms": "tiktok,youtube"})
     k = _clip(conn, 1, 1, "Space for $10M", "approved")
@@ -69,6 +70,7 @@ def test_edit_remove_and_add_post_links(client, conn):
 
 def test_copy_post_links_one_per_line(client, conn):
     client.post("/campaigns", data={"name": "N3on", "bounty_name": "lizzo", "rate_usd": "150",
+                                    "marketplace": "clipping_net",
                                     "rate_mode": "100000", "allowed_platforms": "tiktok,youtube"})
     here = "/campaigns/1/bounties/1/posted"
     a, b = _clip(conn, 1, 1, "A", "approved"), _clip(conn, 1, 1, "B", "approved")

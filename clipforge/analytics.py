@@ -32,7 +32,9 @@ def post_rows(conn: sqlite3.Connection) -> list[dict]:
     for r in conn.execute(POST_VIEWS):
         d = dict(r)
         b = bounties.get(d["bounty_id"])
-        d["earn"] = estimate_payout(b, d["views"]) if b else 0.0
+        # What landed once it's paid, nothing once rejected, the estimate until then.
+        d["earn"] = (d["earned_usd"] if d["earned_usd"] is not None
+                     else estimate_payout(b, d["views"]) if b else 0.0)
         rows.append(d)
     return rows
 

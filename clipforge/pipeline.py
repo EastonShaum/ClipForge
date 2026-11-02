@@ -38,8 +38,10 @@ class Deferred(Exception):
 
 def _source(conn, sid: int) -> sqlite3.Row:
     return conn.execute(
-        "SELECT s.*, c.category, c.name AS campaign_name, c.disclosure, c.logo_path FROM sources s"
-        " JOIN campaigns c ON c.id = s.campaign_id WHERE s.id = ?", (sid,)
+        "SELECT s.*, c.category, c.name AS campaign_name, c.disclosure, c.logo_path,"
+        " b.onscreen_ad_label_required, b.layout bounty_layout, b.facecam FROM sources s"
+        " JOIN campaigns c ON c.id = s.campaign_id LEFT JOIN bounties b ON b.id = s.bounty_id"
+        " WHERE s.id = ?", (sid,)
     ).fetchone()
 
 
@@ -88,6 +90,9 @@ def build_context(conn: sqlite3.Connection, s: Settings, job: sqlite3.Row) -> di
                 "start_ms": cand["start_ms"], "end_ms": cand["end_ms"],
                 "hook": cand["hook_text"], "out_rel": f"{src['id']}/c{cand['id']}.mp4",
                 "disclosure": src["disclosure"], "logo_rels": logo_list(src["logo_path"]),
+                # D38: the label is burned in when the bounty's brief requires it.
+                "onscreen": bool((s and s.onscreen_disclosure)
+                                 or src["onscreen_ad_label_required"]),
                 "layout": (info["live_layout"] or s.live_layout) if info else None}
     if kind == "scout":
         shot = _shot(conn, job)
@@ -132,7 +137,8 @@ def run_handler(s: Settings, kind: str, ctx: dict, out_dir: Path | None = None) 
                                        hook=ctx["hook"] if s.hook_card else "", out_path=out, work=work,
                                        layout=ctx.get("layout"),
                                        disclosure=(_onscreen_disclosure(ctx.get("disclosure"))
-                                                   if s.onscreen_disclosure else ""),
+                                                   if ctx.get("onscreen", s.onscreen_disclosure)
+                                                   else ""),
                                        logo_paths=_logos(s, ctx.get("logo_rels", [])))
         if kind == "scout":
             bounties, meta = scout_stage.read_screenshot(s, s.assets_dir / ctx["image_rel"])
