@@ -57,6 +57,9 @@ def _terms(conn: sqlite3.Connection, bounty_id: int) -> dict:
         for k in ("audience_rules", "footage_scope"):
             if (b.get(k) or "").strip():
                 out[k] = b[k].strip()
+        for k in ("people", "must_mention"):  # D40
+            if names := [n.strip() for n in b.get(k) or [] if n.strip()]:
+                out[k] = ", ".join(names)
         for src, dst in (("ai_video_banned", "ai_video_banned"),
                          ("onscreen_ad_label", "onscreen_ad_label_required")):
             if (b.get(src) or "").lower() == "yes":
@@ -101,7 +104,8 @@ def apply(conn: sqlite3.Connection, bounty_id: int) -> list[str]:
                      ("min_payout_usd", "minimum payout"), ("cap_usd", "max payout"),
                      ("flat_fee_bonus_usd", "bonus"), ("budget_total_usd", "budget"),
                      ("budget_remaining_usd", "budget left"), ("audience_rules", "audience"),
-                     ("footage_scope", "footage"), ("ai_video_banned", "AI video banned"),
+                     ("footage_scope", "footage"), ("people", "people"),
+                     ("must_mention", "must name"), ("ai_video_banned", "AI video banned"),
                      ("onscreen_ad_label_required", "on-screen #ad label")):
         if k not in terms:
             continue

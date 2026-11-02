@@ -174,7 +174,8 @@ def terms_from(form) -> dict:
     for k in ("cap_usd", "min_payout_usd", "flat_fee_bonus_usd", "budget_total_usd",
               "budget_remaining_usd"):
         t[k] = _num(form.get(k))
-    for k in ("brief_url", "audience_rules", "footage_scope", "brief_text"):
+    for k in ("brief_url", "audience_rules", "footage_scope", "brief_text", "people",
+              "must_mention"):
         t[k] = (form.get(k) or "").strip()
     for k in ("onscreen_ad_label_required", "ai_video_banned"):
         t[k] = form.get(k) in ("true", "on", True)
@@ -470,7 +471,11 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
             "SELECT DISTINCT ca.hook_text FROM posts p JOIN clips k ON k.id=p.clip_id JOIN"
             " candidates ca ON ca.id=k.candidate_id")}
         for k in clips:
-            k["problems"] = posting.caption_problems(k["caption"], tags, c["disclosure"])
+            k["problems"] = posting.caption_problems(k["caption"], tags, c["disclosure"],
+                                                     b["must_mention"])
+            if not posting.mentions(k["hook_text"], b["must_mention"]):
+                k["problems"].append("on-screen text must name "
+                                     + " or ".join(posting.name_list(b["must_mention"])[:3]))
             k["same_hook"] = not k["posts"] and k["hook_text"].strip().lower() in posted_hooks
         accts = [a for a in posting.accounts(conn, enabled_only=True)]
         return _tab(request, conn, cid, bid, "post", clips=clips, platforms=PLATFORMS,
@@ -612,13 +617,15 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
     @app.post("/clips/{clip_id}/caption/fix")
     def fix_caption(clip_id: int, conn: DB, next: str = Form("")):
         r = conn.execute(
-            "SELECT k.caption, cp.required_tags ct, b.required_tags bt, cp.disclosure FROM clips k"
+            "SELECT k.caption, cp.required_tags ct, b.required_tags bt, cp.disclosure,"
+            " b.must_mention FROM clips k"
             " JOIN candidates c ON c.id=k.candidate_id JOIN sources s ON s.id=c.source_id"
             " JOIN campaigns cp ON cp.id=s.campaign_id LEFT JOIN bounties b ON b.id=s.bounty_id"
             " WHERE k.id=?", (clip_id,)).fetchone()
         if r:
             conn.execute("UPDATE clips SET caption=? WHERE id=?", (posting.fix_caption(
-                r["caption"], f"{r['ct']} {r['bt'] or ''}", r["disclosure"]), clip_id))
+                r["caption"], f"{r['ct']} {r['bt'] or ''}", r["disclosure"],
+                r["must_mention"] or ""), clip_id))
         return back(_next(next, "/approved") + f"#clip{clip_id}", "Caption fixed")
 
     @app.post("/clips/{clip_id}/unreview")

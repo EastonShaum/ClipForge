@@ -19,6 +19,10 @@
 <label>Campaign page (where you submit) <input name="brief_url" type="url" placeholder="https://contentrewards.com/…" value="{{ t.brief_url or '' }}"></label>
 <label>Audience rules <input name="audience_rules" placeholder="50%+ US viewers" value="{{ t.audience_rules or '' }}"></label>
 <label>Footage allowed <input name="footage_scope" placeholder="the sponsor segment only" value="{{ t.footage_scope or '' }}"></label>
+<label>Who's in the footage <input name="people" placeholder="Lacy, StableRonaldo (Ron), IShowSpeed (Speed)" value="{{ t.people or '' }}">
+  <span class="small muted" style="font-weight:400">Names viewers know. Hooks use them instead of "a streamer".</span></label>
+<label>Caption must name one of <input name="must_mention" placeholder="Core Boys, Lacy, Ron" value="{{ t.must_mention or '' }}">
+  <span class="small muted" style="font-weight:400">From the brief. The hook and caption are checked for one.</span></label>
 <label>YouTube pays on
   <select name="pays_on">{% for k, l in [('unknown','not stated'),('views','public views'),('engaged_views','engaged views')] %}<option value="{{ k }}" {{ 'selected' if (t.pays_on or 'unknown') == k }}>{{ l }}</option>{% endfor %}</select>
 </label>

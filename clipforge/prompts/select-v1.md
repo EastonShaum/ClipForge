@@ -5,6 +5,11 @@ The transcript below has one line per phrase in the form `[start_seconds] text`.
 ## Scoring rubric (score each 0–10, then compute the weighted total out of 100)
 {rubric}
 
+## The campaign
+{brief}
+{people}
+A moment the brief doesn't pay for is a rejected clip: skip it, however good it is. Name people in hooks the way fans know them ("Speed", "Ron"): never "a streamer", "a famous streamer", "his friend" or "a celebrity" when the name is listed here or said in the transcript. A famous name in the hook is often why a clip spreads, so a famous person showing up or being revealed is a top moment, even when the reveal itself is short. Never guess a name that isn't listed or said.
+
 ## Hard rejections (never return a clip that…)
 - starts mid-sentence or mid-thought, or needs earlier context to make sense
 - has no payoff (the setup never resolves, the joke never lands)

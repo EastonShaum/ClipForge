@@ -82,6 +82,25 @@ def test_build_prompt_fills_everything(settings):
     assert "gaming" in p and "LIKED" in p and "[0.0]" in p
 
 
+def test_prompt_carries_the_brief_and_names(settings):
+    """D40: ordinary footage gets the bounty's brief and the names in it, like a live stream."""
+    bounty = {"people": "IShowSpeed (Speed), StableRonaldo (Ron)", "must_mention": "Core Boys",
+              "footage_scope": "Shibuya segment", "notes": "Core Boys reacting to Fortnite"}
+    for name in ("select-v1", "select-v2"):
+        body, _ = select.load_prompt(name)
+        p = select.build_prompt(settings, body, words=words(20), title="t", category="irl",
+                                feedback="", bounty=bounty)
+        assert "People in this footage: IShowSpeed (Speed)" in p
+        assert "must name one of: Core Boys" in p and "Shibuya segment" in p
+        bare = select.build_prompt(settings, body, words=words(20), title="t", category="irl",
+                                   feedback="")
+        assert "No brief entered" in bare and "People: none listed" in bare
+    body, _ = select.load_prompt("live-v1")
+    p = select.build_prompt(settings, body, words=words(20), title="t", category="irl",
+                            feedback="", live={"streamer": "N3on", "guests": "AB"}, bounty=bounty)
+    assert "Guests at this stream: AB" in p and "Core Boys reacting to Fortnite" in p
+
+
 def test_ass_holds_only_the_disclosure():
     ass = render.build_ass(14000, "Montserrat ExtraBold", "Paid partnership #ad")
     assert "Disc,,0,0,0,,Paid partnership #ad" in ass

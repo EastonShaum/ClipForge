@@ -29,6 +29,32 @@ def test_caption_check_and_fix():
     assert posting.caption_problems(fixed, "@pod #tag") == []
 
 
+def test_must_mention_a_name(campaign_id, conn, client):
+    """D40: Core Boys' brief says the caption or on-screen text must name Core Boys or one of
+    them. A hashtag doesn't count; any spelling of the name does."""
+    names = "Core Boys, StableRonaldo (Ron)"
+    assert posting.name_list(names) == ["Core Boys", "StableRonaldo", "Ron"]
+    assert posting.mentions("CORE boys react to Luffy", names)
+    assert posting.mentions("Ron confirmed it", names)
+    assert not posting.mentions("Streamers react #coreboys", names)
+    assert not posting.mentions("Huge front row reaction", names)  # "ron" inside a word
+    assert posting.caption_problems("#ad Streamers react #coreboys", "#coreboys", "#ad",
+                                    names) == ["must name Core Boys or StableRonaldo or Ron"]
+    fixed = posting.fix_caption("Streamers react #coreboys", "#coreboys", "#ad", names)
+    assert fixed == "#ad Core Boys: Streamers react #coreboys"
+    from clipforge.captions import build_caption
+    cap = build_caption(title="Speed shows up as Luffy", hook="", category="irl",
+                        required_tags="#coreboys", caption_notes="", disclosure="#ad",
+                        must_mention=names)
+    assert cap.startswith("#ad Core Boys: Speed shows up as Luffy")
+
+    k, _, bid = _clip(conn, campaign_id, hook="Streamers react to Luffy 😱",
+                      caption="#ad Streamers react")
+    conn.execute("UPDATE bounties SET must_mention=? WHERE id=?", (names, bid))
+    r = client.get(f"/campaigns/{campaign_id}/bounties/{bid}/post")
+    assert "on-screen text must name Core Boys" in r.text
+
+
 def test_accounts_and_the_post_tab(client, conn, campaign_id):
     r = client.post("/accounts", data={"platform": "instagram", "handle": "ez.clips"})
     assert "off for now" in r.text

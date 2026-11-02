@@ -2,6 +2,11 @@ You are selecting short-form clips (TikTok, YouTube Shorts, Instagram Reels) fro
 
 The transcript has one line per phrase: `[start_seconds] text`. Propose the {n} best candidates, each between {min_s} and {max_s} seconds. Apply the hard rejection rules first, then score.
 
+## The campaign
+{brief}
+{people}
+A moment the brief doesn't pay for is a rejected clip: skip it, however good it is. Name people in hooks the way fans know them ("Speed", "Ron"): never "a streamer", "a famous streamer", "his friend" or "a celebrity" when the name is listed here or said in the transcript. A famous name in the hook is often why a clip spreads, so a famous person showing up or being revealed is a top moment, even when the reveal itself is short. Never guess a name that isn't listed or said.
+
 ## Criteria (score each 0–10, multiply by weight; weights sum to 10, max total 100)
 1. HOOK STRENGTH (×2.5): does the first spoken line (first ~2 s) stop a scroller on its own? 10 = concrete, surprising, emotional or specific ("I lost $40,000 in one afternoon."); 5 = relevant but generic; 0 = filler, greeting, or a pronoun with no referent.
 2. PAYOFF (×2.0): a punchline, answer, reveal, result or quotable line lands before the end, and the clip ends within ~1 s after it. 0 = setup with no resolution.

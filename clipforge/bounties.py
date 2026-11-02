@@ -39,6 +39,8 @@ class BountyIn(BaseModel):
     brief_url: str = ""  # the campaign page, where each clip is submitted
     brief_text: str = ""
     pays_on: str = "unknown"  # views | engaged_views | unknown (YouTube)
+    people: str = ""  # D40: "Lacy, StableRonaldo (Ron)": names the hooks use
+    must_mention: str = ""  # D40: the caption and hook must name one of these
 
 
 def bounty_folder(campaign: sqlite3.Row | dict, bounty_name: str) -> str:

@@ -7,6 +7,10 @@ Streamer: {streamer}
 {people}
 Use these names in hooks. Never write "streamer", "a famous guy", "his friend" or "a celebrity" when the name is known. Never guess a name that isn't listed here or said in the transcript.
 
+## The campaign
+{brief}
+A moment the brief doesn't pay for is a rejected clip: skip it.
+
 ## What wins on IRL and party streams
 Ranked by what pulled views on a real stream (N3on's Halloween party, clipped by the top account within 1–9 minutes):
 1. The stream itself breaks: the streamer has to end the stream, gets told to stop filming, leaves suddenly ("don't film it", "go that way", "this is trash"). 1.8M views, 18 s.

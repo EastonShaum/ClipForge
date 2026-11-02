@@ -33,6 +33,10 @@ music, minimum views, submission steps)
 max_payout_usd (per clip), bonus_usd (flat fee per clip), budget_total_usd, budget_remaining_usd
 - audience_rules: audience requirements, e.g. "50%+ US viewers"
 - footage_scope: what footage may be clipped if limited, e.g. "the sponsor segment only"
+- people: the people the campaign is about, as fans know them, with a nickname in brackets \
+when the brief gives one, e.g. "StableRonaldo (Ron)"
+- must_mention: names the caption or on-screen text must mention, if the brief requires it \
+(e.g. ["Core Boys", "Lacy"])
 - ai_video_banned and onscreen_ad_label: "yes" or "no" if the brief says (AI-generated video \
 banned; an on-screen ad label required), else """""
 
@@ -61,6 +65,8 @@ class Brief(BaseModel):
     footage_scope: str
     ai_video_banned: str
     onscreen_ad_label: str
+    people: list[str]
+    must_mention: list[str]
 
 
 def read_brief(s: Settings, image_path: Path) -> tuple[dict, dict]:
@@ -101,4 +107,5 @@ def _fake() -> dict:
                  rules=["No profanity in the hook", "English only"], campaign_type="",
                  rate_per_1k=-1, min_payout_usd=-1, max_payout_usd=-1, bonus_usd=-1,
                  budget_total_usd=-1, budget_remaining_usd=-1, audience_rules="",
-                 footage_scope="", ai_video_banned="", onscreen_ad_label="").model_dump()
+                 footage_scope="", ai_video_banned="", onscreen_ad_label="",
+                 people=["Man On"], must_mention=[]).model_dump()

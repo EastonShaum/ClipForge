@@ -71,11 +71,25 @@ def load_prompt(name: str) -> tuple[str, str]:
     return body, hashlib.sha256(body.encode()).hexdigest()[:12]
 
 
+def brief_block(bounty: dict | None) -> str:
+    """What the bounty's brief pays for, for {brief} (D40): a moment outside it gets rejected,
+    and a hook that doesn't name who the brief asks for breaks its rules."""
+    b = bounty or {}
+    lines = [f"Footage the brief allows: {b['footage_scope']}" if b.get("footage_scope") else "",
+             f"The brief's rules: {b['notes']}" if b.get("notes") else "",
+             f"Brief text: {b['brief_text']}" if b.get("brief_text") else "",
+             f"Every hook_text and title must name one of: {b['must_mention']}"
+             if b.get("must_mention") else ""]
+    return "\n".join(x for x in lines if x) or "No brief entered: any strong moment counts."
+
+
 def build_prompt(s: Settings, template: str, *, words: list[dict], title: str, category: str,
-                 feedback: str, rubric: str | None = None, live: dict | None = None) -> str:
+                 feedback: str, rubric: str | None = None, live: dict | None = None,
+                 bounty: dict | None = None) -> str:
     """live: stream_info() for a live chunk; it switches to the live lengths and fills
-    {streamer} and {people} (the live prompt's extra variables)."""
-    guests = (live or {}).get("guests", "").strip()
+    {streamer} and {people} (the live prompt's extra variables). bounty: the source's bounty,
+    for {brief} and, on ordinary footage, {people} (D40)."""
+    guests = ((live or {}).get("guests") or (bounty or {}).get("people") or "").strip()
     return template.format(
         category=category or "long-form",
         title=title.replace('"', "'"),
@@ -83,8 +97,9 @@ def build_prompt(s: Settings, template: str, *, words: list[dict], title: str, c
         min_s=int(s.live_min_clip_s if live else s.min_clip_s),
         max_s=int(s.live_max_clip_s if live else s.max_clip_s),
         streamer=(live or {}).get("streamer", ""),
-        people=(f"Guests at this stream: {guests}" if guests
-                else "Guests at this stream: none listed"),
+        people=(f"{'Guests at this stream' if live else 'People in this footage'}: {guests}"
+                if guests else f"{'Guests at this stream' if live else 'People'}: none listed"),
+        brief=brief_block(bounty),
         rubric=rubric or DEFAULT_RUBRIC,
         feedback=feedback or "(no feedback yet)",
         hook_types=", ".join(HOOK_TYPES),

@@ -92,6 +92,9 @@ ADDED_COLUMNS = [("campaigns", "logo_path", "TEXT"), ("posts", "submitted_at", "
                  ("bounties", "pays_on", "TEXT NOT NULL DEFAULT 'unknown'"),
                  ("bounties", "layout", "TEXT"),
                  ("bounties", "facecam", "TEXT"),
+                 # D40: who's in the footage, and the names a caption must mention.
+                 ("bounties", "people", "TEXT NOT NULL DEFAULT ''"),
+                 ("bounties", "must_mention", "TEXT NOT NULL DEFAULT ''"),
                  ("campaigns", "facecam", "TEXT"),
                  ("posts", "account_id", "INTEGER"),
                  ("posts", "review_status", "TEXT"),

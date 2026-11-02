@@ -45,6 +45,11 @@ def _source(conn, sid: int) -> sqlite3.Row:
     ).fetchone()
 
 
+def _bounty(conn, bounty_id: int | None) -> dict | None:
+    row = conn.execute("SELECT * FROM bounties WHERE id=?", (bounty_id,)).fetchone()
+    return dict(row) if row else None
+
+
 def _words(conn, sid: int) -> list[dict]:
     row = conn.execute("SELECT words_json FROM transcripts WHERE source_id=?", (sid,)).fetchone()
     return json.loads(row["words_json"]) if row else []
@@ -72,6 +77,7 @@ def build_context(conn: sqlite3.Connection, s: Settings, job: sqlite3.Row) -> di
         prompt = select_stage.build_prompt(
             s, pv["body"], words=words, title=src["title"], category=src["category"],
             feedback=build_feedback(conn, None), live=stream,
+            bounty=_bounty(conn, src["bounty_id"]),
         )
         try:
             costs.check_budget(conn, select_stage.estimate_usd(s, prompt))
@@ -261,7 +267,8 @@ def apply_result(conn: sqlite3.Connection, s: Settings, job: sqlite3.Row, result
                          (now, sid))
         elif kind == "render":
             cand = conn.execute(
-                "SELECT c.*, s.campaign_id, b.required_tags bounty_tags FROM candidates c"
+                "SELECT c.*, s.campaign_id, b.required_tags bounty_tags, b.must_mention"
+                " FROM candidates c"
                 " JOIN sources s ON s.id=c.source_id LEFT JOIN bounties b ON b.id=s.bounty_id"
                 " WHERE c.id=?", (job["candidate_id"],)).fetchone()
             camp = conn.execute("SELECT * FROM campaigns WHERE id=?",
@@ -273,7 +280,8 @@ def apply_result(conn: sqlite3.Connection, s: Settings, job: sqlite3.Row, result
             caption = build_caption(title=cand["title"], hook=cand["hook_text"],
                                     category=camp["category"], required_tags=tags,
                                     caption_notes=camp["caption_notes"],
-                                    disclosure=camp["disclosure"])
+                                    disclosure=camp["disclosure"],
+                                    must_mention=cand["must_mention"] or "")
             conn.execute(
                 """INSERT INTO clips (candidate_id, path, size_bytes, render_s, rendered_by, caption)
                    VALUES (?,?,?,?,?,?)
