@@ -34,6 +34,13 @@
 </article>
 {% endfor %}
 
+{% if archived %}
+<details class="card">
+  <summary>Archived ({{ archived|length }})</summary>
+  <div class="list">{% for c in archived %}<a href="/campaigns/{{ c.id }}"><span>{{ c.name }}</span><span class="chip mk-{{ c.marketplace }}">{{ marketplaces[c.marketplace] }}</span></a>{% endfor %}</div>
+</details>
+{% endif %}
+
 <details class="card" id="add" {{ 'open' if not campaigns or prefill }}>
 <summary>Add campaign</summary>
 <div class="small muted">A campaign is the brand (Man On); a bounty is what pays (episode-4). Adding a bounty to an existing campaign: use the same campaign name, or "Add bounty" on its page.</div>

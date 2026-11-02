@@ -660,6 +660,8 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
             if k in prefill:
                 prefill[k] = _num(prefill[k])
         camps = list_campaigns(conn)
+        archived = [c for c in camps if c["status"] == "archived"]
+        camps = [c for c in camps if c["status"] != "archived"]
         used = {c["marketplace"] for c in camps}
         if m in money.MARKETPLACES:
             camps = [c for c in camps if c["marketplace"] == m]
@@ -670,7 +672,8 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         # A streamer added on the Lives tab, with no paid bounty, lives there only.
         camps = [c for c in camps if c["bounties"] or not (c["watch_live"] or c["live_channels"])]
         return page(request, "campaigns.html", campaigns=camps, msg=msg, prefill=prefill,
-                    market=m if m in money.MARKETPLACES else "", markets_used=used)
+                    market=m if m in money.MARKETPLACES else "", markets_used=used,
+                    archived=archived)
 
     @app.post("/campaigns")
     async def create_campaign(request: Request, conn: DB):
@@ -772,6 +775,22 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
     def campaign_status(cid: int, conn: DB, status: str = Form(...)):
         conn.execute("UPDATE campaigns SET status=? WHERE id=?", (status, cid))
         return back(f"/campaigns/{cid}", "Updated")
+
+    @app.post("/campaigns/{cid}/archive")
+    def campaign_archive(cid: int, conn: DB, undo: str = Form("")):
+        """Archive a finished campaign: its bounties end, and it leaves the Campaigns list and
+        Home. Its clips, posts and stats stay; unarchiving makes it active again (its bounties
+        stay ended until you reopen them)."""
+        c = _camp_or_404(conn, cid)
+        with tx(conn):
+            if undo:
+                conn.execute("UPDATE campaigns SET status='active' WHERE id=?", (cid,))
+            else:
+                conn.execute("UPDATE campaigns SET status='archived' WHERE id=?", (cid,))
+                conn.execute("UPDATE bounties SET status='ended' WHERE campaign_id=?"
+                             " AND status!='ended'", (cid,))
+        return back(f"/campaigns/{cid}" if undo else "/campaigns",
+                    f"{c['name']} is active again" if undo else f"{c['name']} archived")
 
     @app.post("/campaigns/{cid}/delete")
     def campaign_delete(cid: int, conn: DB):

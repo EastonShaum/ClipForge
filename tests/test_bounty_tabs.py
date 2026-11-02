@@ -113,3 +113,18 @@ def test_home_lists_what_needs_you_and_review_shows_one_clip(client, conn):
     assert "1 of 2" in r.text
     # The payout line: best clip's views against the bounty's minimum.
     assert "of 100,000 views on the best clip" in page
+
+
+def test_archive_a_finished_campaign(client, conn):
+    client.post("/campaigns", data={"name": "Old Pod", "bounty_name": "ep1", "rate_usd": "1"})
+    client.post("/campaigns", data={"name": "New Pod", "rate_usd": "1"})
+    _clip(conn, 1, 1, "A", "in_review")
+    assert "Old Pod" in client.get("/").text
+    r = client.post("/campaigns/1/archive")
+    assert "Old Pod archived" in r.text and "Archived (1)" in r.text
+    assert conn.execute("SELECT status FROM bounties WHERE campaign_id=1").fetchone()[0] == "ended"
+    assert "Old Pod" not in client.get("/").text  # off Home
+    assert "Unarchive" in client.get("/campaigns/1").text
+    r = client.post("/campaigns/1/archive", data={"undo": "1"})
+    assert "Old Pod is active again" in r.text
+    assert conn.execute("SELECT status FROM campaigns WHERE id=1").fetchone()[0] == "active"

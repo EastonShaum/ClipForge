@@ -8,6 +8,18 @@
   <span class="chip">{{ c.status }}</span>{% if c.category %}<span class="chip">{{ c.category }}</span>{% endif %}
   <span class="muted">{% for p in c.allowed_platforms.split(',') %}{{ platform_names.get(p, p) }}{% if not loop.last %} · {% endif %}{% endfor %}</span>
 </div>
+{% if c.status == 'archived' %}
+<form method="post" action="/campaigns/{{ c.id }}/archive" class="card row small">
+  <span style="flex:1">Archived: hidden from Campaigns and Home. Clips, posts and stats are kept.</span>
+  <button class="small" name="undo" value="1">Unarchive</button>
+</form>
+{% else %}
+<form method="post" action="/campaigns/{{ c.id }}/archive" class="row"
+      data-confirm="Archive {{ c.name }}? Its bounties end and it leaves the Campaigns list and Home. Clips, posts and stats are kept, and you can unarchive it.">
+  <button class="small">Archive campaign</button>
+  <span class="small muted">For campaigns that are done.</span>
+</form>
+{% endif %}
 {% if c.required_tags %}<div class="small">Tags on every clip: {{ c.required_tags }}</div>{% endif %}
 {% if c.notes %}<div class="small muted">{{ c.notes }}</div>{% endif %}
 
