@@ -37,7 +37,7 @@
 <details class="card" id="add" {{ 'open' if not campaigns or prefill }}>
 <summary>Add campaign</summary>
 <div class="small muted">A campaign is the brand (Man On); a bounty is what pays (episode-4). Adding a bounty to an existing campaign: use the same campaign name, or "Add bounty" on its page.</div>
-<form method="post" action="/campaigns" class="grid2">
+<form method="post" action="/campaigns" class="grid2" enctype="multipart/form-data">
   <label>Name <input name="name" required placeholder="e.g. Big Podcast Clips" value="{{ prefill.name or '' }}"></label>
   <label>Marketplace
     <select name="marketplace">{% for k, v in marketplaces.items() %}<option value="{{ k }}" {{ 'selected' if (prefill.marketplace or 'content_rewards') == k }}>{{ v }}</option>{% endfor %}</select>
@@ -56,6 +56,9 @@
   <label>YouTube RSS feeds to watch <input name="watch_feeds" placeholder="https://www.youtube.com/feeds/videos.xml?channel_id=…"></label>
   <label>Notes <input name="notes" value="{{ prefill.notes or '' }}"></label>
   <label>Kick / Twitch channels <input name="live_channels" placeholder="kick.com/n3on (empty: found by name)" value="{{ prefill.live_channels or '' }}"></label>
+  <label style="grid-column: 1 / -1">Requirement screenshots
+    <input type="file" name="docs" accept="image/*" multiple>
+    <span class="small muted" style="font-weight:400">The campaign's brief or rules page. They're read for tags, platforms, pay terms and rules; you check them, then tap Apply to bounty.</span></label>
   <label class="check"><input type="checkbox" name="live_clip" value="true" {{ 'checked' if prefill.live }}>
     Clip their live streams into this bounty. Clips render once you add the requirement screenshots.</label>
   <label class="check"><input type="checkbox" name="terms_ok"> Political: the brief names the sponsor and its disclosure terms</label>

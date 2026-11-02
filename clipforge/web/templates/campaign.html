@@ -23,9 +23,13 @@
   {% endfor %}
   <details {{ 'open' if not bounties }}>
     <summary class="small">Add bounty</summary>
-    <form method="post" action="/campaigns/{{ c.id }}/bounties" class="grid2" style="margin-top:8px">
+    <form method="post" action="/campaigns/{{ c.id }}/bounties" class="grid2" style="margin-top:8px" enctype="multipart/form-data">
       <label>Name <input name="name" required placeholder="e.g. episode-5"></label>
       {% set t = {} %}{% include "_terms.html" %}
+      <label style="grid-column: 1 / -1">Requirement screenshots
+    <input type="file" name="docs" accept="image/*" multiple>
+    <span class="small muted" style="font-weight:400">The campaign's brief or rules page. They're read for tags, platforms, pay terms and rules; you check them, then tap Apply to bounty.</span></label>
+  
       <button class="go small">Add bounty</button>
     </form>
     <div class="small muted">Its footage folder is created on the laptop: {{ library_dir or 'Campaigns' }}\{{ (c.media_folder or c.name) }}\&lt;bounty name&gt;</div>

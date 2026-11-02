@@ -118,3 +118,19 @@ def test_brief_screenshot_fills_content_rewards_terms(conn, campaign_id):
     assert b["cap_usd"] == 200 and b["budget_remaining_usd"] == 900 and b["budget_checked_at"]
     assert b["ai_video_banned"] == 1 and b["onscreen_ad_label_required"] == 0
     assert "audience: 50%+ US" in changes and "AI video banned" in changes
+
+
+def test_requirement_screenshots_with_a_new_campaign_or_bounty(client, conn, tmp_path):
+    png = _png(tmp_path)
+    r = client.post("/campaigns", data={"name": "Pod", "bounty_name": "ep1", "rate_usd": "1"},
+                    files=[("docs", ("brief.png", png, "image/png"))])
+    assert "Reading 1 requirement screenshot" in r.text and "Apply to bounty" in r.text
+    assert conn.execute("SELECT bounty_id FROM campaign_docs").fetchone()[0] == 1
+    r = client.post("/campaigns/1/bounties", data={"name": "ep2", "rate_usd": "1"},
+                    files=[("docs", ("b.png", _png(tmp_path, "blue"), "image/png"))])
+    assert "Reading 1 requirement screenshot" in r.text
+    assert conn.execute("SELECT COUNT(*) FROM jobs WHERE kind='brief'").fetchone()[0] == 2
+    # No files is fine too.
+    r = client.post("/campaigns/1/bounties", data={"name": "ep3", "rate_usd": "1"})
+    assert "Bounty ep3 added" in r.text
+    assert 'name="docs"' in client.get("/campaigns").text

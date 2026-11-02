@@ -90,7 +90,7 @@
 
   {% set br = brief %}
 <section class="card" id="rules">
-  <details {{ 'open' if docs and not docs[-1].applied_at }}>
+  <details {{ 'open' if not docs or not docs[-1].applied_at }}>
     <summary>Requirements ({{ docs|length }} screenshot{{ '' if docs|length == 1 else 's' }})</summary>
     <div class="small" style="display:grid;gap:6px;margin-top:8px">
     {% if br.summary %}<div>{{ br.summary|join(' ') }}</div>{% endif %}

@@ -676,7 +676,9 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
     async def create_campaign(request: Request, conn: DB):
         """Add a campaign with its first bounty. A campaign that already exists (same name) just
         gets the new bounty, so Scout's "Add" works for a second episode too."""
-        raw = dict(await request.form())
+        posted = await request.form()
+        docs = posted.getlist("docs")
+        raw = {k: v for k, v in posted.items() if k != "docs"}
         form = {k: v for k, v in raw.items() if v not in ("", None)}
         force = form.pop("force", None) == "on"
         terms_ok = form.pop("terms_ok", None) == "on"
@@ -717,6 +719,9 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         except (ValueError, TypeError) as e:
             return back("/campaigns", str(e).split("\n")[0][:200])
         msg = (f"Bounty {bounty['name']} added" if existing else f"Campaign #{cid} added")
+        if n := await store_docs(conn, cid, bid, docs):
+            msg += f". Reading {n} requirement screenshot(s): check them, then tap Apply to bounty"
+            return back(f"/campaigns/{cid}/bounties/{bid}#rules", msg)
         if clip_live:
             return back(f"/campaigns/{cid}/bounties/{bid}",
                         f"{msg}. " + ("Today's stream is in it now; clips" if now_live else
@@ -737,12 +742,18 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
     @app.post("/campaigns/{cid}/bounties")
     async def bounty_add(request: Request, cid: int, conn: DB):
         _camp_or_404(conn, cid)
-        form = dict(await request.form())
+        posted = await request.form()
+        docs = posted.getlist("docs")
+        form = {k: v for k, v in posted.items() if k != "docs"}
         name = (form.get("name") or "").strip()
         try:
             bid = add_bounty(conn, cid, BountyIn(name=name, **terms_from(form)))
         except ValueError as e:
             return back(f"/campaigns/{cid}", str(e))
+        if n := await store_docs(conn, cid, bid, docs):
+            return back(f"/campaigns/{cid}/bounties/{bid}#rules", f"Bounty {name} added."
+                        f" Reading {n} requirement screenshot(s): check them, then tap Apply"
+                        " to bounty")
         return back(f"/campaigns/{cid}/bounties/{bid}", f"Bounty {name} added")
 
     @app.post("/campaigns/{cid}/settings")
@@ -940,12 +951,11 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         return back(f"/campaigns/{cid}/bounties/{bid}",
                     f"Queued {added} video(s) for clipping" if added else "Nothing queued")
 
-    @app.post("/campaigns/{cid}/bounties/{bid}/docs")
-    async def bounty_docs_upload(cid: int, bid: int, conn: DB,
-                                 docs: list[UploadFile] = File(...)):
-        _bounty_or_404(conn, cid, bid)
+    async def store_docs(conn, cid: int, bid: int, docs) -> int:
+        """Store requirement screenshots for a bounty and queue reading them. Returns how many
+        were new images."""
         added = 0
-        for f in docs[:20]:
+        for f in [d for d in docs if isinstance(d, StarletteUpload) and d.filename][:20]:
             data = await f.read(MAX_SHOT_BYTES + 1)
             if not data or len(data) > MAX_SHOT_BYTES:
                 continue
@@ -962,7 +972,14 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
                     jobqueue.enqueue(conn, "brief", f"brief:{cur.lastrowid}",
                                      affinity_host=s.host_name, priority=50)
                     added += 1
-        url = f"/campaigns/{cid}/bounties/{bid}"
+        return added
+
+    @app.post("/campaigns/{cid}/bounties/{bid}/docs")
+    async def bounty_docs_upload(cid: int, bid: int, conn: DB,
+                                 docs: list[UploadFile] = File(...)):
+        _bounty_or_404(conn, cid, bid)
+        added = await store_docs(conn, cid, bid, docs)
+        url = f"/campaigns/{cid}/bounties/{bid}#rules"
         return back(url, f"Reading {added} requirement screenshot(s)…" if added
                     else "Nothing new: already uploaded, or not an image")
 
