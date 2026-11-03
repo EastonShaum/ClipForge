@@ -55,6 +55,28 @@ function copyValue(text, btn) {
   if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(done, fallback);
   else fallback();
 }
+// "Save video": the share sheet (Save Video → Photos) where the phone allows it (https only),
+// else the plain download. Safari may refuse to share after the fetch if it took too long;
+// then the file is ready and the next tap shares it at once.
+const clipFiles = {};
+function saveVideo(a, ev) {
+  if (!window.isSecureContext || !navigator.canShare) return true;
+  ev.preventDefault();
+  const name = a.getAttribute("download"), label = a.dataset.label || (a.dataset.label = a.textContent);
+  const share = f => navigator.share({files: [f]}).then(() => a.textContent = label, e => {
+    if (e.name === "AbortError") a.textContent = label;
+    else if (e.name === "NotAllowedError") a.textContent = "Ready: tap to save";
+    else location.href = a.href;
+  });
+  if (clipFiles[a.href]) return share(clipFiles[a.href]), false;
+  a.textContent = "Getting video…";
+  fetch(a.href).then(r => { if (!r.ok) throw new Error(r.status); return r.blob(); }).then(b => {
+    const f = new File([b], name, {type: "video/mp4"});
+    if (!navigator.canShare({files: [f]})) { a.textContent = label; location.href = a.href; return; }
+    clipFiles[a.href] = f; share(f);
+  }).catch(() => { a.textContent = label; location.href = a.href; });
+  return false;
+}
 // Confirm before a destructive form submits (data-confirm on the form).
 document.addEventListener("submit", e => {
   const m = e.target.dataset.confirm;

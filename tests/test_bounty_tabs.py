@@ -29,6 +29,7 @@ def test_tabs_show_only_this_bountys_clips(client, conn):
     assert r.url.path == "/campaigns/1/bounties/1/review" and "Approved" in r.text
     post = client.get("/campaigns/1/bounties/1/post").text
     assert "Ep4 hook" in post and 'data-hook="Ep4 hook"' in post
+    assert 'onclick="return saveVideo(this, event)"' in post and "https-hint" not in post
     assert client.get("/review").url.path == "/campaigns/1/bounties/2/review"
 
 
@@ -146,3 +147,14 @@ def test_archive_a_finished_bounty_keeps_the_campaign(client, conn):
     assert "ep1 is active again" in r.text
     assert client.post("/campaigns/1/bounties/1/status",
                        data={"status": "archived"}).status_code == 400
+
+
+def test_post_page_points_plain_http_at_the_https_ui(client, conn, monkeypatch):
+    from clipforge import config
+    monkeypatch.setenv("CF_HTTPS_BASE_URL", "https://pi.example.ts.net:8443/")
+    config.get_settings.cache_clear()
+    client.post("/campaigns", data={"name": "Man On", "bounty_name": "episode-4",
+                                    "rate_usd": "125", "rate_mode": "100000"})
+    _clip(conn, 1, 1, "Ep4 hook", "approved")
+    post = client.get("/campaigns/1/bounties/1/post").text
+    assert 'href="https://pi.example.ts.net:8443/campaigns/1/bounties/1/post"' in post

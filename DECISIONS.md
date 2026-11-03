@@ -289,3 +289,8 @@ From Easton's update brief (research report, Oct 2026) and Content Rewards' own 
 ## D42. Bounties can be archived (2026-11-02)
 - A campaign often runs one bounty after another (Core Boys, then the next drop). Archiving a whole campaign hid the next one too.
 - **Archive bounty** (bounty Settings) sets `status='archived'`: it leaves the campaign's list (a collapsed "Archived" section instead), the Campaigns page and Home, and, like any non-active bounty, gets no reminders, folder footage or channel uploads. Clips, posts and stats stay. Unarchive makes it active. "Mark …" only takes active, paused or ended.
+
+## D43. "Save video" opens the share sheet (2026-11-03)
+- On the iPhone over plain http, "Save video" opened Safari's file preview ("Open in…/More…"). Saving to Photos took extra taps, and then Easton had to back out.
+- Now, on a secure page, it fetches the clip and opens the share sheet with the file, so Save Video goes straight to Photos. If Safari refuses because the fetch took too long, the button reads "Ready: tap to save" and the next tap shares the clip immediately. A browser without file sharing gets the plain download.
+- The share sheet needs https. `CF_HTTPS_BASE_URL` (Tailscale serve, `https://raspberrypi.your-tailnet.ts.net:8443`) is linked from the Post page when it's opened over http, and Discord links (`CF_PUBLIC_BASE_URL`) now point there too.

@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     bind_host: str = "127.0.0.1"
     port: int = 8420
     public_base_url: str = "http://127.0.0.1:8420"  # used in Discord links
+    # The same UI over https (tailscale serve). The phone's share sheet, which saves a clip
+    # straight to Photos, only works there; the Post page links to it from plain http.
+    https_base_url: str = ""
     worker_token: str = ""  # shared secret for remote workers calling the API
 
     # Providers

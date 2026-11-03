@@ -138,6 +138,7 @@ def _live_now() -> bool:
 
 
 templates.env.globals["live_now"] = _live_now
+templates.env.globals["https_base"] = lambda: get_settings().https_base_url.rstrip("/")
 templates.env.globals |= {"marketplaces": money.MARKETPLACES, "payout": money.payout,
                           "campaign_types": money.CAMPAIGN_TYPES,
                           "payer_types": money.PAYER_TYPES, "cap_views": money.cap_views,

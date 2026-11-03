@@ -14,6 +14,9 @@
   {% if b.onscreen_ad_label_required %}<div><b>On-screen label:</b> burned in ("Paid partnership #ad"). Keep it visible: don't crop it out.</div>{% endif %}
 </div>
 {% endif %}
+{% if https_base() %}<div class="card small https-hint" hidden>"Save video" here opens a file preview.
+  <a href="{{ https_base() }}{{ here }}">Open this page over https</a> to save clips straight to Photos.</div>
+<script>if (!window.isSecureContext) document.querySelectorAll('.https-hint').forEach(e => e.hidden = false);</script>{% endif %}
 {% if not accounts %}<div class="small muted"><a href="/accounts">Add your accounts</a> to log which one each post went to (views and posting pace are tracked per account).</div>{% endif %}
 {% for c in clips %}
 <article class="card" id="clip{{ c.id }}">
@@ -25,7 +28,8 @@
             onclick="copyValue(this.dataset.hook, this)">Copy on-screen text</button></div>
   <video src="/media/clips/{{ c.path }}" controls playsinline preload="metadata"></video>
   <div class="row">
-    <a class="btn go big" href="/media/clips/{{ c.path }}" download="clip{{ c.id }}.mp4">Save video</a>
+    <a class="btn go big" href="/media/clips/{{ c.path }}" download="clip{{ c.id }}.mp4"
+       onclick="return saveVideo(this, event)">Save video</a>
     {% if not c.problems %}<button type="button" class="big" onclick="copyText('cap{{ c.id }}', this)">Copy caption</button>{% endif %}
   </div>
   {% if c.problems %}
