@@ -18,7 +18,7 @@ def _by_bounty(conn: sqlite3.Connection, status: str) -> list[dict]:
                   cp.name campaign, COUNT(*) n, MAX(c.score) best
            FROM clips k JOIN candidates c ON c.id=k.candidate_id JOIN sources s ON s.id=c.source_id
            JOIN bounties b ON b.id=s.bounty_id JOIN campaigns cp ON cp.id=b.campaign_id
-           WHERE k.status=? AND cp.status!='archived'
+           WHERE k.status=? AND cp.status!='archived' AND b.status!='archived'
            GROUP BY s.bounty_id ORDER BY n DESC, best DESC""",
         (status,)).fetchall()
     return [{**dict(r), "label": live_label(r)} for r in rows]
@@ -37,7 +37,8 @@ def _posts_where(conn: sqlite3.Connection, where: str, args: tuple = ()) -> list
                    cp.name campaign, COUNT(*) n
             FROM posts p JOIN clips k ON k.id=p.clip_id JOIN candidates c ON c.id=k.candidate_id
             JOIN sources s ON s.id=c.source_id JOIN bounties b ON b.id=s.bounty_id
-            JOIN campaigns cp ON cp.id=b.campaign_id WHERE cp.status!='archived' AND {where}
+            JOIN campaigns cp ON cp.id=b.campaign_id
+            WHERE cp.status!='archived' AND b.status!='archived' AND {where}
             GROUP BY s.bounty_id ORDER BY n DESC""", args).fetchall()
     return [{**dict(r), "label": live_label(r)} for r in rows]
 

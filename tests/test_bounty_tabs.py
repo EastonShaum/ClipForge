@@ -128,3 +128,21 @@ def test_archive_a_finished_campaign(client, conn):
     r = client.post("/campaigns/1/archive", data={"undo": "1"})
     assert "Old Pod is active again" in r.text
     assert conn.execute("SELECT status FROM campaigns WHERE id=1").fetchone()[0] == "active"
+
+
+def test_archive_a_finished_bounty_keeps_the_campaign(client, conn):
+    client.post("/campaigns", data={"name": "Pod", "bounty_name": "ep1", "rate_usd": "1"})
+    client.post("/campaigns/1/bounties", data={"name": "ep2", "rate_usd": "1"})
+    _clip(conn, 1, 1, "A", "in_review")
+    assert "Pod" in client.get("/").text
+    r = client.post("/campaigns/1/bounties/1/archive")
+    assert "ep1 archived" in r.text and "Archived (1)" in r.text
+    assert conn.execute("SELECT status FROM bounties WHERE id=1").fetchone()[0] == "archived"
+    assert conn.execute("SELECT status FROM campaigns WHERE id=1").fetchone()[0] == "active"
+    assert "to review" not in client.get("/").text  # its clips leave Home
+    assert "ep1" not in client.get("/campaigns").text and "ep2" in client.get("/campaigns").text
+    assert "Unarchive" in client.get("/campaigns/1/bounties/1").text
+    r = client.post("/campaigns/1/bounties/1/archive", data={"undo": "1"})
+    assert "ep1 is active again" in r.text
+    assert client.post("/campaigns/1/bounties/1/status",
+                       data={"status": "archived"}).status_code == 400

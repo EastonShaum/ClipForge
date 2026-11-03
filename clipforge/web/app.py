@@ -674,7 +674,7 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         if m in money.MARKETPLACES:
             camps = [c for c in camps if c["marketplace"] == m]
         for c in camps:
-            c["bounties"] = list_bounties(conn, c["id"])
+            c["bounties"] = [b for b in list_bounties(conn, c["id"]) if b["status"] != "archived"]
             for b in c["bounties"]:
                 b["prog"] = inbox.progress(conn, b)
         # A streamer added on the Lives tab, with no paid bounty, lives there only.
@@ -926,8 +926,20 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         return back("/lives?tab=streamers", "Saved. Channels are checked every"
                     f" {s.live_check_s // 60} min.")
 
+    @app.post("/campaigns/{cid}/bounties/{bid}/archive")
+    def bounty_archive(cid: int, bid: int, conn: DB, undo: str = Form("")):
+        """Archive a finished bounty: it leaves the campaign's list, Home and the reminders, and
+        stops taking footage. Its clips, posts and stats stay; unarchiving makes it active."""
+        b = _bounty_or_404(conn, cid, bid)
+        conn.execute("UPDATE bounties SET status=? WHERE id=?",
+                     ("active" if undo else "archived", bid))
+        return back(f"/campaigns/{cid}/bounties/{bid}" if undo else f"/campaigns/{cid}",
+                    f"{b['name']} is active again" if undo else f"{b['name']} archived")
+
     @app.post("/campaigns/{cid}/bounties/{bid}/status")
     def bounty_status(cid: int, bid: int, conn: DB, status: str = Form(...)):
+        if status not in ("active", "paused", "ended"):
+            raise HTTPException(400, "unknown status")
         conn.execute("UPDATE bounties SET status=? WHERE id=? AND campaign_id=?",
                      (status, bid, cid))
         return back(f"/campaigns/{cid}/bounties/{bid}", "Updated")

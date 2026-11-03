@@ -25,14 +25,21 @@
 
 <section class="card">
   <h2>Bounties</h2>
-  {% for b in bounties %}
+  {% set archived_b = bounties|selectattr('status', 'equalto', 'archived')|list %}
+  {% for b in bounties if b.status != 'archived' %}
   <a class="camp-link bounty-row" href="/campaigns/{{ c.id }}/bounties/{{ b.id }}">
     <b>{{ b.name }}</b>
     <span class="small muted">{% include "_rate.html" %}{% if b.budget_remaining_usd is not none %} · <strong>{{ b.budget_remaining_usd|money }} left</strong>{% endif %} · {{ b.sources }} video{{ 's' if b.sources != 1 }} · {{ b.clips }} clips{% if b.status != 'active' %} · {{ b.status }}{% endif %}{% if b.end_date %} · ends {{ b.end_date }}{% endif %}</span>
   </a>
   {% else %}
-  <div class="small muted">No bounties yet.</div>
+  <div class="small muted">{{ 'No active bounties: add the next one below.' if archived_b else 'No bounties yet.' }}</div>
   {% endfor %}
+  {% if archived_b %}
+  <details class="small">
+    <summary>Archived ({{ archived_b|length }})</summary>
+    <div class="list">{% for b in archived_b %}<a href="/campaigns/{{ c.id }}/bounties/{{ b.id }}"><span>{{ b.name }}</span><span class="muted">{{ b.clips }} clips</span></a>{% endfor %}</div>
+  </details>
+  {% endif %}
   <details {{ 'open' if not bounties }}>
     <summary class="small">Add bounty</summary>
     <form method="post" action="/campaigns/{{ c.id }}/bounties" class="grid2" style="margin-top:8px" enctype="multipart/form-data">

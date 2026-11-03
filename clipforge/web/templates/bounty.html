@@ -3,6 +3,12 @@
 {% block content %}
 {% if busy %}<meta http-equiv="refresh" content="20">{% endif %}
 {% include "_bounty_head.html" %}
+{% if b.status == 'archived' %}
+<form method="post" action="/campaigns/{{ c.id }}/bounties/{{ b.id }}/archive" class="card row small">
+  <span style="flex:1">Archived: hidden from {{ c.name }}'s list and Home, and takes no new footage. Clips, posts and stats are kept.</span>
+  <button class="small" name="undo" value="1">Unarchive</button>
+</form>
+{% endif %}
 {% if b.status != 'active' or b.end_date or b.audience_rules or b.footage_scope or b.ai_video_banned or b.onscreen_ad_label_required %}<div class="row small">
   {% if b.status != 'active' %}<span class="chip">{{ b.status }}</span>{% endif %}
   {% if b.end_date %}<span>Ends {{ b.end_date }}</span>{% endif %}
@@ -175,6 +181,13 @@
     <button class="small" name="status" value="{{ st }}">Mark {{ st }}</button>
     {% endfor %}
   </form>
+  {% if b.status != 'archived' %}
+  <form method="post" action="/campaigns/{{ c.id }}/bounties/{{ b.id }}/archive" class="row"
+        data-confirm="Archive {{ b.name }}? It leaves the campaign's list and Home, and stops taking footage. Clips, posts and stats are kept, and you can unarchive it.">
+    <button class="small">Archive bounty</button>
+    <span class="small muted">For a bounty that's done. The campaign stays open for the next one.</span>
+  </form>
+  {% endif %}
   </details>
 </section>
 
