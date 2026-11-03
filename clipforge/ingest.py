@@ -82,6 +82,11 @@ def add_source(conn: sqlite3.Connection, campaign_id: int, url: str,
                           (bounty_id, campaign_id)).fetchone():
         raise ValueError(f"bounty {bounty_id} isn't part of campaign {campaign_id}")
     url = url.strip().strip('"')
+    from clipforge.channels import channel_base
+
+    if channel_base(url):
+        raise ValueError("That's a whole channel, not one video: add it under YouTube channels"
+                         " to pick its videos")
     pin = file_host(conn, url, host)
     key = source_key(url, pin or "")
     existing = conn.execute("SELECT id FROM sources WHERE source_key=?", (key,)).fetchone()

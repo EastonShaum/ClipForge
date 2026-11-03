@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}{{ ch.name }} · {{ b.name }} · ClipForge{% endblock %}
+{% block content %}
+<div class="small"><a href="/campaigns/{{ c.id }}">{{ c.name }}</a> › <a href="/campaigns/{{ c.id }}/bounties/{{ b.id }}">{{ b.name }}</a></div>
+<h1>{{ ch.name or 'Channel' }}</h1>
+{% set here = '/campaigns/' ~ c.id ~ '/bounties/' ~ b.id ~ '/channels/' ~ ch.id %}
+<div class="row small">
+  {% for k, l in tabs.items() %}<a class="chip {{ 'ok' if tab == k }}" href="{{ here }}?tab={{ k }}&sort={{ sort }}&short={{ short }}">{{ l }}</a>{% endfor %}
+  <span class="muted">·</span>
+  <a class="chip {{ 'ok' if sort == 'new' }}" href="{{ here }}?tab={{ tab }}&sort=new&short={{ short }}">Newest</a>
+  <a class="chip {{ 'ok' if sort == 'views' }}" href="{{ here }}?tab={{ tab }}&sort=views&short={{ short }}">Most views</a>
+  <a class="small" href="{{ ch.url }}/{{ tab }}" target="_blank" rel="noopener">Open on YouTube</a>
+</div>
+{% if error %}<div class="card small status-failed">{{ error }}</div>{% endif %}
+<form method="post" action="{{ here }}/queue" class="card">
+  <div class="small">Nothing runs until you confirm. Only clip a channel the brief names. Newest first covers the last {{ videos|length + hidden if not short else videos|length }} videos.
+    {% if hidden and not short %}{{ hidden }} under {{ (min_s / 60)|round|int }} min hidden (<a href="{{ here }}?tab={{ tab }}&sort={{ sort }}&short=1">show</a>).{% endif %}</div>
+  <div class="files">
+  {% for v in videos %}
+    {% set k = have.get(v.id) %}
+    <label class="file {{ 'muted' if k }}">
+      <input type="checkbox" name="vid" value="{{ v.id }}" data-h="{{ v.duration_s / 3600 }}" {{ 'disabled' if k }}>
+      <span><a href="{{ v.url }}" target="_blank" rel="noopener">{{ v.title }}</a></span>
+      <span class="muted">{{ (v.duration_s / 60)|round|int }} min · {{ v.views|num }} views{% if v.published %} · ~{{ v.published }}{% endif %}{% if k %} · already {{ k.status }}{% if k.bounty and k.bounty != b.name %} in {{ k.bounty }}{% endif %}{% endif %}</span>
+    </label>
+  {% else %}
+    <div class="muted">No videos to show.</div>
+  {% endfor %}
+  </div>
+  {% if videos %}
+  <div class="small">Selected: <b><span id="nv">0</span> videos, <span id="hrs">0.0</span> h</b> →
+    about <b>$<span id="usd">0.00</span></b> in API costs (budget left this month ${{ "%.2f"|format(budget.cap - budget.month) }}),
+    up to <b><span id="nclips">0</span> clips</b> to review, ~<span id="render">0.0</span> h of laptop rendering.</div>
+  <label class="small">Clips per video
+    <input type="number" name="clips" id="clips" min="1" max="{{ most }}" value="{{ b.clips_wanted }}" style="width:5em">
+    <span class="muted">the best ones by score; 1–{{ most }}</span></label>
+  <button class="go big" id="go">Confirm and start clipping</button>
+  {% endif %}
+</form>
+<script>
+const boxes = [...document.querySelectorAll('input[name=vid]:not(:disabled)')];
+function upd() {
+  const on = boxes.filter(b => b.checked);
+  const hrs = on.reduce((t, b) => t + parseFloat(b.dataset.h), 0);
+  const per = parseInt(document.getElementById('clips')?.value) || 0;
+  const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+  set('nv', on.length); set('hrs', hrs.toFixed(1));
+  set('usd', (on.length * {{ per_file }} + hrs * {{ per_hour }}).toFixed(2));
+  set('nclips', on.length * per); set('render', (on.length * per * {{ render_s }} / 3600).toFixed(1));
+  const btn = document.getElementById('go');
+  if (btn) { btn.textContent = on.length ? `Confirm and start clipping (${on.length})` : 'Select at least one video'; btn.disabled = !on.length; }
+}
+boxes.forEach(b => b.addEventListener('change', upd));
+document.getElementById('clips')?.addEventListener('input', upd); upd();
+</script>
+{% endblock %}

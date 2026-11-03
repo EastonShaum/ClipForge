@@ -64,6 +64,8 @@ class Settings(BaseSettings):
     claude_cli_path: str = "claude"
     candidates_requested: int = 18
     candidates_keep: int = 6
+    channel_list_max: int = 60  # D41: videos listed from a channel
+    channel_min_video_s: float = 180.0  # D41: shorter uploads aren't offered or auto-queued
     min_clip_s: float = 15.0
     max_clip_s: float = 60.0
 

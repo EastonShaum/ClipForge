@@ -5,7 +5,7 @@ import logging
 import signal
 import time
 
-from clipforge import costs, live, notify, reminders
+from clipforge import channels, costs, live, notify, reminders
 from clipforge.bounties import release_ready
 from clipforge.config import get_settings
 from clipforge.db import session, tx, utc_in, utcnow
@@ -65,6 +65,8 @@ def run(poll_every_s: int = 1800, cleanup_every_s: int = 3600):
             if now - last_poll >= poll_every_s:
                 with session() as conn:
                     n = poll_feeds(conn)
+                    for msg in channels.poll(conn):  # D41
+                        notify.discord(msg)
                 if n:
                     log.info("feed poll added %d sources", n)
                 last_poll = now

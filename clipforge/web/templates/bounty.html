@@ -56,6 +56,24 @@
       <button class="small">Save</button>
     </form>
   </details>
+  <div class="small" style="margin-top:10px"><b>YouTube channels</b>
+    <span class="muted">· when the brief allows any video from a channel</span></div>
+  {% for ch in channels %}
+  <div class="row small">
+    <a class="btn small" href="/campaigns/{{ c.id }}/bounties/{{ b.id }}/channels/{{ ch.id }}">{{ ch.name or ch.url }}: pick videos…</a>
+    <form method="post" action="/campaigns/{{ c.id }}/bounties/{{ b.id }}/channels/{{ ch.id }}/watch">
+      <input type="hidden" name="on" value="{{ 0 if ch.watch else 1 }}">
+      <button class="small" title="Check for new uploads every 30 min">{{ 'Watching ✓ (stop)' if ch.watch else 'Watch new uploads' }}</button>
+    </form>
+    <form method="post" action="/campaigns/{{ c.id }}/bounties/{{ b.id }}/channels/{{ ch.id }}/delete" onsubmit="return confirm('Remove this channel? Clips already made stay.')">
+      <button class="small danger" aria-label="Remove channel">×</button></form>
+  </div>
+  {% if ch.watch %}<div class="small muted">New uploads since {{ ch.watch_since|local }} {{ 'are queued for clipping right away (auto-queue is on)' if b.auto_queue else 'get a Discord ping; turn on auto-queue in Settings to clip them right away' }}. Shorts and videos under {{ (min_video_s / 60)|round|int }} min are skipped.</div>{% endif %}
+  {% endfor %}
+  <form method="post" action="/campaigns/{{ c.id }}/bounties/{{ b.id }}/channels" class="row small">
+    <input name="url" required placeholder="https://www.youtube.com/@channel" style="flex:1;min-width:12em">
+    <button class="small">Add channel</button>
+  </form>
   <details class="small">
     <summary>Add links instead (YouTube, Drive, or a full file path)</summary>
     <form method="post" action="/sources" style="display:grid;gap:8px;margin-top:8px">

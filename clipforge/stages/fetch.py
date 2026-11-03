@@ -78,9 +78,12 @@ def fetch(s: Settings, source_id: int, url: str) -> dict:
 
     import yt_dlp  # heavy import, only when actually fetching
 
-    probe_opts = {"quiet": True, "no_warnings": True, "skip_download": True}
+    probe_opts = {"quiet": True, "no_warnings": True, "skip_download": True,
+                  "extract_flat": "in_playlist", "noplaylist": True}
     with yt_dlp.YoutubeDL(probe_opts) as ydl:
         info = ydl.extract_info(url, download=False)
+    if info.get("_type") == "playlist":  # D41: never download a whole channel or playlist
+        raise RuntimeError("that link is a channel or playlist, not one video")
     duration = float(info.get("duration") or 0)
     # Rough size estimate: ~1.5 GB/hour at 1080p.
     check_disk(s, incoming_gb=1.5 * duration / 3600)

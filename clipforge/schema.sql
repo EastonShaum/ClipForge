@@ -305,3 +305,16 @@ CREATE TABLE IF NOT EXISTS work_log (
     note            TEXT NOT NULL DEFAULT '',
     created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
+
+-- D41: YouTube channels a bounty may clip any video from; watch=1 queues/announces new uploads.
+CREATE TABLE IF NOT EXISTS bounty_channels (
+    id              INTEGER PRIMARY KEY,
+    bounty_id       INTEGER NOT NULL REFERENCES bounties(id),
+    url             TEXT NOT NULL,                          -- https://www.youtube.com/@handle
+    channel_id      TEXT NOT NULL,                          -- UC…
+    name            TEXT NOT NULL DEFAULT '',
+    watch           INTEGER NOT NULL DEFAULT 0,
+    watch_since     TEXT,                                   -- uploads after this are new
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    UNIQUE (bounty_id, channel_id)
+);

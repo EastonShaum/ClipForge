@@ -23,6 +23,7 @@ from clipforge import (
     analytics,
     bounties,
     briefs,
+    channels,
     costs,
     inbox,
     jobqueue,
@@ -855,6 +856,8 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
                     holds=bounties.hold_reasons(conn, b),
                     held=bounties.held_count(conn, bid),
                     sessions=live.sessions(conn, bounty_id=bid), time=_time(conn, bid),
+                    channels=channels.for_bounty(conn, bid),
+                    min_video_s=s.channel_min_video_s,
                     target=s.target_hourly_usd)
 
     @app.post("/campaigns/{cid}/bounties/{bid}/settings")
@@ -977,6 +980,83 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         return back(f"/campaigns/{cid}/bounties/{bid}",
                     f"Queued {added} video(s) for clipping" if added else "Nothing queued")
 
+    # ---------- YouTube channels (D41) ----------
+    def _channel_or_404(conn, bid: int, chid: int) -> sqlite3.Row:
+        row = conn.execute("SELECT * FROM bounty_channels WHERE id=? AND bounty_id=?",
+                           (chid, bid)).fetchone()
+        if not row:
+            raise HTTPException(404, "channel not found")
+        return row
+
+    @app.post("/campaigns/{cid}/bounties/{bid}/channels")
+    def channel_add(cid: int, bid: int, conn: DB, url: str = Form(...)):
+        _bounty_or_404(conn, cid, bid)
+        try:
+            with tx(conn):
+                chid = channels.add(conn, bid, url)
+        except ValueError as e:
+            return back(f"/campaigns/{cid}/bounties/{bid}", str(e))
+        return RedirectResponse(f"/campaigns/{cid}/bounties/{bid}/channels/{chid}",
+                                status_code=303)
+
+    @app.get("/campaigns/{cid}/bounties/{bid}/channels/{chid}")
+    def channel_page(request: Request, cid: int, bid: int, chid: int, conn: DB,
+                     sort: str = "new", tab: str = "videos", short: int = 0, msg: str = ""):
+        c = _camp_or_404(conn, cid)
+        b = _bounty_or_404(conn, cid, bid)
+        ch = _channel_or_404(conn, bid, chid)
+        tab = tab if tab in channels.TABS else "videos"
+        error, videos = "", []
+        try:
+            videos = channels.listing(ch["url"], tab)["videos"]
+        except channels.NoSuchTab as e:
+            error = str(e)
+        except Exception as e:  # noqa: BLE001 - show YouTube's error instead of a 500
+            error = f"YouTube didn't list this channel: {str(e)[-300:]}"
+        have = channels.known(conn, [v["id"] for v in videos])
+        hidden = [v for v in videos if v["duration_s"] < s.channel_min_video_s]
+        if not short:
+            videos = [v for v in videos if v["duration_s"] >= s.channel_min_video_s]
+        if sort == "views":
+            videos.sort(key=lambda v: -v["views"])
+        per_file = library.estimate([{"duration_s": 0}], 1)["usd"]
+        per_hour = library.estimate([{"duration_s": 3600}], 1)["usd"] - per_file
+        return page(request, "channel.html", c=c, b=b, ch=ch, videos=videos, have=have,
+                    sort=sort, tab=tab, tabs=channels.TABS, short=short, hidden=len(hidden),
+                    min_s=s.channel_min_video_s, error=error, msg=msg,
+                    per_file=per_file, per_hour=per_hour, budget=costs.budget_status(conn),
+                    most=s.candidates_requested, render_s=library.RENDER_S_PER_CLIP)
+
+    @app.post("/campaigns/{cid}/bounties/{bid}/channels/{chid}/queue")
+    def channel_queue(cid: int, bid: int, chid: int, conn: DB, vid: list[str] = Form([]),
+                      clips: int = Form(6)):
+        _bounty_or_404(conn, cid, bid)
+        _channel_or_404(conn, bid, chid)
+        added = 0
+        for v in vid:
+            if not channels.VIDEO_ID.match(v):
+                continue
+            with tx(conn):
+                _, created = add_source(conn, cid, channels.video_url(v), bounty_id=bid,
+                                        clips=_clips(clips))
+            added += created
+        return back(f"/campaigns/{cid}/bounties/{bid}",
+                    f"Queued {added} video(s) for clipping" if added else "Nothing new queued")
+
+    @app.post("/campaigns/{cid}/bounties/{bid}/channels/{chid}/watch")
+    def channel_watch(cid: int, bid: int, chid: int, conn: DB, on: str = Form("0")):
+        _bounty_or_404(conn, cid, bid)
+        _channel_or_404(conn, bid, chid)
+        channels.set_watch(conn, chid, on == "1")
+        return back(f"/campaigns/{cid}/bounties/{bid}",
+                    "Watching for new uploads" if on == "1" else "Stopped watching")
+
+    @app.post("/campaigns/{cid}/bounties/{bid}/channels/{chid}/delete")
+    def channel_delete(cid: int, bid: int, chid: int, conn: DB):
+        _bounty_or_404(conn, cid, bid)
+        conn.execute("DELETE FROM bounty_channels WHERE id=? AND bounty_id=?", (chid, bid))
+        return back(f"/campaigns/{cid}/bounties/{bid}", "Channel removed (its clips stay)")
+
     async def store_docs(conn, cid: int, bid: int, docs) -> int:
         """Store requirement screenshots for a bounty and queue reading them. Returns how many
         were new images."""
@@ -1042,8 +1122,17 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         url_back = (f"/campaigns/{campaign_id}/bounties/{bounty_id}" if bounty_id
                     else f"/campaigns/{campaign_id}")
         added = dup = 0
+        lines = [u.strip() for u in urls.splitlines() if u.strip()]
+        # D41: a channel link opens the channel's video list instead of being queued.
+        if bounty_id and (chans := [u for u in lines if channels.channel_base(u)]):
+            try:
+                with tx(conn):
+                    chid = channels.add(conn, bounty_id, chans[0])
+            except ValueError as e:
+                return back(url_back, str(e))
+            return RedirectResponse(f"{url_back}/channels/{chid}", status_code=303)
         # One per line, not per whitespace: Windows paths often contain spaces.
-        for url in filter(None, (u.strip() for u in urls.splitlines())):
+        for url in lines:
             try:
                 with tx(conn):
                     _, created = add_source(conn, campaign_id, url, host or None, bounty_id)
