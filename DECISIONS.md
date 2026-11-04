@@ -294,3 +294,7 @@ From Easton's update brief (research report, Oct 2026) and Content Rewards' own 
 - On the iPhone over plain http, "Save video" opened Safari's file preview ("Open in…/More…"). Saving to Photos took extra taps, and then Easton had to back out.
 - Now, on a secure page, it fetches the clip and opens the share sheet with the file, so Save Video goes straight to Photos. If Safari refuses because the fetch took too long, the button reads "Ready: tap to save" and the next tap shares the clip immediately. A browser without file sharing gets the plain download.
 - The share sheet needs https. `CF_HTTPS_BASE_URL` (Tailscale serve, `https://raspberrypi.your-tailnet.ts.net:8443`) is linked from the Post page when it's opened over http, and Discord links (`CF_PUBLIC_BASE_URL`) now point there too.
+
+## D44. Scout reads a whole marketplace page (2026-11-04)
+- A tall Content Rewards screenshot (7 slices, 50 bounties) failed twice with "Invalid JSON: EOF". Haiku 5.5 thinks by default, and thinking counts against `max_tokens`. About 6K tokens of thinking plus about 200 tokens per bounty overran the 8K limit, and 16K wasn't enough either.
+- The Scout reader now streams with `max_tokens=64000` (non-streaming calls can't ask for that much), and the brief reader's limit went from 4K to 16K. This page took 21K output tokens ($0.012).

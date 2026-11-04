@@ -84,7 +84,7 @@ def read_brief(s: Settings, image_path: Path) -> tuple[dict, dict]:
     client = anthropic.Anthropic(api_key=s.anthropic_api_key, max_retries=4)
     resp = client.messages.parse(
         model=s.select_model,
-        max_tokens=4000,
+        max_tokens=16000,  # room for thinking (on by default) plus the answer
         messages=[{"role": "user", "content": screenshot.content(image_path, PROMPT)}],
         output_format=Brief,
     )

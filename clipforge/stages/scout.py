@@ -116,12 +116,16 @@ def read_screenshot(s: Settings, image_path: Path) -> tuple[list[dict], dict]:
     if not s.anthropic_api_key:
         raise MissingKey("CF_ANTHROPIC_API_KEY is not set")
     client = anthropic.Anthropic(api_key=s.anthropic_api_key, max_retries=4)
-    resp = client.messages.parse(
+    # A full marketplace page is 40+ bounties at ~200 tokens each, after several thousand
+    # tokens of thinking (on by default, and it counts here). That needs more than a
+    # non-streaming call may ask for, so stream it.
+    with client.messages.stream(
         model=s.select_model,
-        max_tokens=8000,
+        max_tokens=64000,
         messages=[{"role": "user", "content": screenshot.content(image_path, PROMPT)}],
         output_format=ScoutRead,
-    )
+    ) as stream:
+        resp = stream.get_final_message()
     tin, tout = resp.usage.input_tokens, resp.usage.output_tokens
     usd = llm_cost(s.select_model, tin, tout)
     meta = {"provider": "anthropic", "model": s.select_model, "tokens_in": tin,
