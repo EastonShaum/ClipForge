@@ -1,5 +1,6 @@
 """FastAPI app: mobile-first review UI, campaign/source forms, dashboard, health, worker API."""
 
+import hashlib
 import json
 import logging
 import shutil
@@ -731,15 +732,14 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         except (ValueError, TypeError) as e:
             return back("/campaigns", str(e).split("\n")[0][:200])
         msg = (f"Bounty {bounty['name']} added" if existing else f"Campaign #{cid} added")
-        if n := await store_docs(conn, cid, bid, docs):
-            msg += f". Reading {n} requirement screenshot(s): check them, then tap Apply to bounty"
-            return back(f"/campaigns/{cid}/bounties/{bid}#rules", msg)
+        await store_docs(conn, cid, bid, docs)
+        store_brief_text(conn, cid, bid, terms.get("brief_text", ""))
         if clip_live:
             return back(f"/campaigns/{cid}/bounties/{bid}",
                         f"{msg}. " + ("Today's stream is in it now; clips" if now_live else
                                       "Move a stream into it from the Lives tab. Clips")
                         + " render once you add the requirement screenshots below.")
-        return back(f"/campaigns/{cid}", msg)
+        return back(f"/campaigns/{cid}/bounties/{bid}/setup", msg)
 
     @app.get("/campaigns/{cid}")
     def campaign_page(request: Request, cid: int, conn: DB, msg: str = ""):
@@ -762,11 +762,9 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
             bid = add_bounty(conn, cid, BountyIn(name=name, **terms_from(form)))
         except ValueError as e:
             return back(f"/campaigns/{cid}", str(e))
-        if n := await store_docs(conn, cid, bid, docs):
-            return back(f"/campaigns/{cid}/bounties/{bid}#rules", f"Bounty {name} added."
-                        f" Reading {n} requirement screenshot(s): check them, then tap Apply"
-                        " to bounty")
-        return back(f"/campaigns/{cid}/bounties/{bid}", f"Bounty {name} added")
+        await store_docs(conn, cid, bid, docs)
+        store_brief_text(conn, cid, bid, form.get("brief_text", ""))
+        return back(f"/campaigns/{cid}/bounties/{bid}/setup", f"Bounty {name} added")
 
     @app.post("/campaigns/{cid}/settings")
     async def campaign_settings(request: Request, cid: int, conn: DB):
@@ -861,6 +859,66 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
                     min_video_s=s.channel_min_video_s,
                     target=s.target_hourly_usd)
 
+    def _missing(b: dict, plats: str) -> list[str]:
+        """The _terms.html fields the brief left empty on this bounty (the setup step asks
+        for just these)."""
+        out = []
+        if not b["rate_usd"]:
+            out += ["campaign_type", "rate_usd"]
+        if b["min_payout_usd"] is None and not b["min_views"]:
+            out.append("min_payout_usd")
+        out += [k for k in ("cap_usd", "flat_fee_bonus_usd", "budget_total_usd",
+                            "budget_remaining_usd", "end_date") if b[k] is None]
+        out += [k for k in ("brief_url", "audience_rules", "footage_scope", "people",
+                            "must_mention") if not b[k]]
+        if "youtube" in plats and b["pays_on"] == "unknown":
+            out.append("pays_on")
+        return out + [k for k in ("onscreen_ad_label_required", "ai_video_banned") if not b[k]]
+
+    @app.get("/campaigns/{cid}/bounties/{bid}/setup")
+    def bounty_setup(request: Request, cid: int, bid: int, conn: DB, msg: str = ""):
+        """Step 2 of adding a bounty: once its brief is read and applied, ask only for what the
+        brief didn't say."""
+        c = _camp_or_404(conn, cid)
+        _bounty_or_404(conn, cid, bid)
+        docs = conn.execute(
+            """SELECT d.*, j.state, j.last_error FROM campaign_docs d
+               LEFT JOIN jobs j ON j.dedupe_key='brief:'||d.id
+               WHERE d.bounty_id=? ORDER BY d.id""", (bid,)).fetchall()
+        reading = [d for d in docs if d["state"] in ("queued", "running")]
+        changes = []
+        if docs and not reading:
+            with tx(conn):  # fills only what's empty, so a reload changes nothing
+                changes = briefs.apply(conn, bid)
+                bounties.release_ready(conn, cid)
+        b = _bounty_or_404(conn, cid, bid)
+        failed = [d for d in docs if not reading and not d["extracted"]]
+        return page(request, "setup.html", c=c, b=b, t=b, docs=docs, reading=reading,
+                    failed=failed, changes=changes, brief=briefs.merged(conn, bid),
+                    only=_missing(b, c["allowed_platforms"]), msg=msg)
+
+    @app.post("/campaigns/{cid}/bounties/{bid}/setup")
+    async def bounty_setup_save(request: Request, cid: int, bid: int, conn: DB):
+        """Save what was filled in on the setup step; empty fields leave the bounty as is."""
+        b = _bounty_or_404(conn, cid, bid)
+        form = {k: v for k, v in (await request.form()).items() if str(v).strip()}
+        try:
+            t = terms_from(form)
+        except ValueError as e:
+            return back(f"/campaigns/{cid}/bounties/{bid}/setup", str(e))
+        keys = [k for k in t if k in form] + (["rate_per_views"] if "rate_usd" in form else [])
+        if "min_views" in form or "min_payout_usd" in form or "rate_usd" in form:
+            keys.append("min_views")
+        sets = {k: t[k] for k in dict.fromkeys(keys)}
+        if "min_views" in sets and "min_views" not in form:
+            sets["min_views"] = money.min_views_for({**b, **sets})
+        if "budget_remaining_usd" in sets:
+            sets["budget_checked_at"] = utcnow()
+        if sets:
+            conn.execute(f"UPDATE bounties SET {', '.join(f'{k}=?' for k in sets)} WHERE id=?",
+                         (*sets.values(), bid))
+        return back(f"/campaigns/{cid}/bounties/{bid}", f"Bounty {b['name']} is set up")
+
     @app.post("/campaigns/{cid}/bounties/{bid}/settings")
     async def bounty_settings(request: Request, cid: int, bid: int, conn: DB):
         b = _bounty_or_404(conn, cid, bid)
@@ -887,6 +945,10 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
                          (*t.values(), bid))
             if b["render_hold"] and not render_hold:
                 bounties.release(conn, bid)  # unticking the hold renders what was waiting
+        if t["brief_text"] != b["brief_text"] and store_brief_text(conn, cid, bid,
+                                                                   t["brief_text"]):
+            return back(f"/campaigns/{cid}/bounties/{bid}#rules", "Saved. Reading the new"
+                        " brief: check it, then tap Apply to bounty")
         return back(f"/campaigns/{cid}/bounties/{bid}", "Saved")
 
     @app.post("/campaigns/{cid}/bounties/{bid}/time")
@@ -1092,6 +1154,36 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
                                      affinity_host=s.host_name, priority=50)
                     added += 1
         return added
+
+    def store_brief_text(conn, cid: int, bid: int, text: str) -> int:
+        """Queue reading a pasted brief, like a screenshot (stored as briefs/<sha>.txt). An
+        edited brief replaces the bounty's earlier text. Returns 1 if it's new, else 0."""
+        text = (text or "").strip()
+        if not text:
+            return 0
+        sha = f"t{bid}-" + hashlib.sha256(text.encode()).hexdigest()[:16]  # unique per bounty
+        rel = f"briefs/{sha}.txt"
+        if conn.execute("SELECT 1 FROM campaign_docs WHERE bounty_id=? AND sha=?",
+                        (bid, sha)).fetchone():
+            return 0
+        path = s.assets_dir / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".part")
+        tmp.write_text(text, encoding="utf-8")
+        tmp.replace(path)  # atomic
+        with tx(conn):
+            for old in conn.execute("SELECT id FROM campaign_docs WHERE bounty_id=? AND path"
+                                    " LIKE '%.txt'", (bid,)).fetchall():
+                conn.execute("DELETE FROM jobs WHERE dedupe_key=?", (f"brief:{old['id']}",))
+                conn.execute("DELETE FROM campaign_docs WHERE id=?", (old["id"],))
+            cur = conn.execute(
+                "INSERT INTO campaign_docs (campaign_id, bounty_id, sha, path) VALUES"
+                " (?,?,?,?) ON CONFLICT(campaign_id, sha) DO NOTHING", (cid, bid, sha, rel))
+            if not cur.rowcount:
+                return 0
+            jobqueue.enqueue(conn, "brief", f"brief:{cur.lastrowid}",
+                             affinity_host=s.host_name, priority=50)
+        return 1
 
     @app.post("/campaigns/{cid}/bounties/{bid}/docs")
     async def bounty_docs_upload(cid: int, bid: int, conn: DB,

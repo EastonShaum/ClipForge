@@ -115,7 +115,7 @@
   {% set br = brief %}
 <section class="card" id="rules">
   <details {{ 'open' if not docs or not docs[-1].applied_at }}>
-    <summary>Requirements ({{ docs|length }} screenshot{{ '' if docs|length == 1 else 's' }})</summary>
+    <summary>Requirements ({{ docs|length }} read)</summary>
     <div class="small" style="display:grid;gap:6px;margin-top:8px">
     {% if br.summary %}<div>{{ br.summary|join(' ') }}</div>{% endif %}
     {% if br.required_tags %}<div><b>Tags:</b> {{ br.required_tags|join(' ') }}</div>{% endif %}
@@ -134,7 +134,8 @@
     <div class="row">
     {% for d in docs %}
       <form method="post" action="/campaigns/{{ c.id }}/bounties/{{ b.id }}/docs/{{ d.id }}/delete" class="row">
-        <a href="/media/assets/{{ d.path }}" target="_blank" rel="noopener"><img src="/media/assets/{{ d.path }}" alt="requirements screenshot {{ loop.index }}" class="logo-thumb"></a>
+        {% if d.path.endswith('.txt') %}<a class="chip" href="/media/assets/{{ d.path }}" target="_blank" rel="noopener">pasted brief</a>
+        {% else %}<a href="/media/assets/{{ d.path }}" target="_blank" rel="noopener"><img src="/media/assets/{{ d.path }}" alt="requirements screenshot {{ loop.index }}" class="logo-thumb"></a>{% endif %}
         {% if d.state in ('queued','running') %}<span class="muted">reading…</span>
         {% elif not d.extracted %}<span class="status-failed">{{ d.state or 'failed' }}</span>{% endif %}
         <button class="small">×</button>

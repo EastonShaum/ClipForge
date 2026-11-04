@@ -80,7 +80,13 @@ def read_brief(s: Settings, image_path: Path) -> tuple[dict, dict]:
 
     if not s.anthropic_api_key:
         raise MissingKey("CF_ANTHROPIC_API_KEY is not set")
-    brief, meta = structured(s, Brief, screenshot.content(image_path, PROMPT), 32000)
+    if image_path.suffix == ".txt":  # a brief pasted as text
+        content = (PROMPT.replace("a screenshot of", "the text of").replace("the screenshot",
+                                                                            "the text")
+                   + "\n\n<brief>\n" + image_path.read_text(encoding="utf-8") + "\n</brief>")
+    else:
+        content = screenshot.content(image_path, PROMPT)
+    brief, meta = structured(s, Brief, content, 32000)
     return brief.model_dump(), meta
 
 

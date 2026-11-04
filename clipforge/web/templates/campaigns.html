@@ -53,7 +53,16 @@
     <select name="category">{% for cat in categories %}<option {{ 'selected' if prefill.category == cat }}>{{ cat }}</option>{% endfor %}</select>
   </label>
   <label>First bounty <input name="bounty_name" placeholder="e.g. episode-4 (empty: main)" value="{{ prefill.bounty_name or '' }}"></label>
-  {% set t = prefill %}{% include "_terms.html" %}
+  <label style="grid-column: 1 / -1">Brief <textarea name="brief_text" rows="5" placeholder="Paste the brief's text">{{ (prefill or {}).brief_text or '' }}</textarea></label>
+  <label style="grid-column: 1 / -1">Requirement screenshots
+    <input type="file" name="docs" accept="image/*" multiple>
+    <span class="small muted" style="font-weight:400">The brief and screenshots are read first; next you're only asked for the terms they don't give.</span></label>
+  <label>Campaign page (where you submit) <input name="brief_url" type="url" placeholder="https://contentrewards.com/…" value="{{ (prefill or {}).brief_url or '' }}"></label>
+  {# Scout's "Add" carries the terms it read; they go in with the bounty. #}
+  {% for k in ('campaign_type', 'rate_usd', 'rate_mode', 'min_payout_usd', 'min_views', 'cap_usd', 'flat_fee_bonus_usd', 'budget_total_usd', 'budget_remaining_usd', 'end_date', 'audience_rules', 'footage_scope') %}{% if prefill[k] is defined and prefill[k] not in (none, '') %}<input type="hidden" name="{{ k }}" value="{{ prefill[k] }}">{% endif %}{% endfor %}
+  <details style="grid-column: 1 / -1" {{ 'open' if prefill.live }}>
+  <summary class="small">More: platforms, tags, live streams <span class="muted">(the brief usually covers these)</span></summary>
+  <div class="grid2" style="margin-top:8px">
   <fieldset class="plats"><legend>Allowed platforms</legend>
     {% for p in all_platforms %}<label class="check"><input type="checkbox" name="pf_{{ p }}" value="1" {{ 'checked' if p in (prefill.platforms or 'tiktok,youtube') }}> {{ platform_names[p] }}</label>{% endfor %}
   </fieldset>
@@ -62,14 +71,13 @@
   <label>Disclosure <input name="disclosure" value="#ad"></label>
   <label>Notes <input name="notes" value="{{ prefill.notes or '' }}"></label>
   <label>Kick / Twitch channels <input name="live_channels" placeholder="kick.com/n3on (empty: found by name)" value="{{ prefill.live_channels or '' }}"></label>
-  <label style="grid-column: 1 / -1">Requirement screenshots
-    <input type="file" name="docs" accept="image/*" multiple>
-    <span class="small muted" style="font-weight:400">The campaign's brief or rules page. They're read for tags, platforms, pay terms and rules; you check them, then tap Apply to bounty.</span></label>
   <label class="check"><input type="checkbox" name="live_clip" value="true" {{ 'checked' if prefill.live }}>
     Clip their live streams into this bounty. Clips render once you add the requirement screenshots.</label>
   <label class="check"><input type="checkbox" name="terms_ok"> Political: the brief names the sponsor and its disclosure terms</label>
   <label class="check"><input type="checkbox" name="force"> Override the gambling blocklist</label>
-  <button class="go">Add campaign</button>
+  </div>
+  </details>
+  <button class="go">Next: read the brief</button>
 </form>
 </details>
 {% endblock %}

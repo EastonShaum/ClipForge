@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Set up {{ b.name }} · ClipForge{% endblock %}
+{% block content %}
+{% if reading %}<meta http-equiv="refresh" content="4">{% endif %}
+<div class="crumbs"><a href="/campaigns">Campaigns</a> › <a href="/campaigns/{{ c.id }}">{{ c.name }}</a></div>
+<h1>{{ b.name }}</h1>
+{% set base = "/campaigns/" ~ c.id ~ "/bounties/" ~ b.id %}
+{% if reading %}
+<div class="card">Reading the brief ({{ reading|length }} of {{ docs|length }} left)… this page refreshes itself.
+  <div class="small muted">Then you'll only be asked for what the brief doesn't say.</div></div>
+{% else %}
+{% if failed %}<div class="card small status-failed">Couldn't read {{ failed|length }} of them{% if failed[0].last_error %}: {{ failed[0].last_error[:160] }}{% endif %}. Fill in the rest below.</div>{% endif %}
+{% if docs and not failed or changes %}
+<div class="card small">
+  <b>From the brief</b>{% if changes %}: {{ changes|join('; ') }}{% endif %}
+  {% if brief.summary %}<div>{{ brief.summary|join(' ') }}</div>{% endif %}
+  {% if brief.length %}<div>Length: {{ brief.length|join(', ') }}</div>{% endif %}
+  {% if brief.logo_rule %}<div>Logos: {{ brief.logo_rule|join(' ') }}</div>{% endif %}
+  <div class="muted">Everything it read is under Requirements on the bounty page.</div>
+</div>
+{% elif not docs %}
+<div class="card small">No brief or screenshots, so fill in the terms by hand.
+  <a href="{{ base }}#rules">Add requirement screenshots</a> instead, and they're read for you.</div>
+{% endif %}
+{% if only %}
+<form method="post" action="{{ base }}/setup" class="card grid2">
+  <div class="small" style="grid-column: 1 / -1">{{ 'The brief didn\'t say these. Fill in what applies and leave the rest empty.' if docs else 'Terms' }}</div>
+  {% include "_terms.html" %}
+  <button class="go">Save</button>
+  <a class="btn" href="{{ base }}">Skip</a>
+</form>
+{% else %}
+<a class="btn go big" href="{{ base }}">Done: go to the bounty</a>
+{% endif %}
+{% endif %}
+{% endblock %}

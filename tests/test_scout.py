@@ -40,7 +40,8 @@ def test_upload_read_rank_and_prefill(client, conn, tmp_path, settings, monkeypa
     page = client.get("/scout").text
     assert "Man On" in page and "Add as bounty" in page
     form = client.get("/campaigns?name=Man+On&rate_usd=125&rate_mode=100000&category=podcast")
-    assert 'value="Man On"' in form.text and '<option value="100000" selected' in form.text
+    assert 'value="Man On"' in form.text \
+        and '<input type="hidden" name="rate_mode" value="100000">' in form.text
 
 
 def test_fill_speed_and_closing_penalty(conn):
@@ -120,17 +121,37 @@ def test_brief_screenshot_fills_content_rewards_terms(conn, campaign_id):
     assert "audience: 50%+ US" in changes and "AI video banned" in changes
 
 
-def test_requirement_screenshots_with_a_new_campaign_or_bounty(client, conn, tmp_path):
+def test_a_new_bounty_reads_its_brief_first_then_asks_for_the_rest(client, conn, tmp_path,
+                                                                   settings):
     png = _png(tmp_path)
-    r = client.post("/campaigns", data={"name": "Pod", "bounty_name": "ep1", "rate_usd": "1"},
+    r = client.post("/campaigns", data={"name": "Pod", "bounty_name": "ep1"},
                     files=[("docs", ("brief.png", png, "image/png"))])
-    assert "Reading 1 requirement screenshot" in r.text and "Apply to bounty" in r.text
-    assert conn.execute("SELECT bounty_id FROM campaign_docs").fetchone()[0] == 1
-    r = client.post("/campaigns/1/bounties", data={"name": "ep2", "rate_usd": "1"},
-                    files=[("docs", ("b.png", _png(tmp_path, "blue"), "image/png"))])
-    assert "Reading 1 requirement screenshot" in r.text
+    assert r.url.path == "/campaigns/1/bounties/1/setup" and "Reading the brief" in r.text
+    assert 'name="rate_usd"' not in r.text  # no manual fields while it reads
+    run_local(["brief"], once=True, idle_s=0)
+    page = client.get("/campaigns/1/bounties/1/setup").text
+    assert "From the brief" in page and "tags: #manon @manon" in page
+    assert "people: Man On" in page and "end date: 2026-11-15" in page
+    # Only what the brief didn't give is asked for.
+    assert 'name="rate_usd"' in page and 'name="people"' not in page
+    assert 'name="end_date"' not in page
+    r = client.post("/campaigns/1/bounties/1/setup",
+                    data={"rate_usd": "1.5", "rate_mode": "1000", "campaign_type": "cpm",
+                          "min_payout_usd": "", "audience_rules": ""})
+    b = conn.execute("SELECT * FROM bounties WHERE id=1").fetchone()
+    assert b["rate_usd"] == 1.5 and b["people"] == "Man On" and b["end_date"] == "2026-11-15"
+    assert b["audience_rules"] == "" and "is set up" in r.text
+
+    # A pasted brief is read too, stored as a text file next to the screenshots.
+    r = client.post("/campaigns/1/bounties", data={"name": "ep2", "brief_text": "Clip ep2."})
+    assert r.url.path == "/campaigns/1/bounties/2/setup"
+    doc = conn.execute("SELECT path FROM campaign_docs WHERE bounty_id=2").fetchone()
+    assert (settings.assets_dir / doc["path"]).read_text() == "Clip ep2."
+    # Editing the brief in settings replaces that text and reads it again.
+    client.post("/campaigns/1/bounties/2/settings", data={"brief_text": "Clip ep2, new."})
+    assert conn.execute("SELECT COUNT(*) FROM campaign_docs WHERE bounty_id=2").fetchone()[0] == 1
     assert conn.execute("SELECT COUNT(*) FROM jobs WHERE kind='brief'").fetchone()[0] == 2
-    # No files is fine too.
-    r = client.post("/campaigns/1/bounties", data={"name": "ep3", "rate_usd": "1"})
-    assert "Bounty ep3 added" in r.text
+    # No brief at all: every term is asked for.
+    r = client.post("/campaigns/1/bounties", data={"name": "ep3"})
+    assert "fill in the terms by hand" in r.text and 'name="end_date"' in r.text
     assert 'name="docs"' in client.get("/campaigns").text

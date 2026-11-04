@@ -44,12 +44,12 @@
     <summary class="small">Add bounty</summary>
     <form method="post" action="/campaigns/{{ c.id }}/bounties" class="grid2" style="margin-top:8px" enctype="multipart/form-data">
       <label>Name <input name="name" required placeholder="e.g. episode-5"></label>
-      {% set t = {} %}{% include "_terms.html" %}
-      <label style="grid-column: 1 / -1">Requirement screenshots
+      <label style="grid-column: 1 / -1">Brief <textarea name="brief_text" rows="5" placeholder="Paste the brief's text">{{ (prefill or {}).brief_text or '' }}</textarea></label>
+  <label style="grid-column: 1 / -1">Requirement screenshots
     <input type="file" name="docs" accept="image/*" multiple>
-    <span class="small muted" style="font-weight:400">The campaign's brief or rules page. They're read for tags, platforms, pay terms and rules; you check them, then tap Apply to bounty.</span></label>
-  
-      <button class="go small">Add bounty</button>
+    <span class="small muted" style="font-weight:400">The brief and screenshots are read first; next you're only asked for the terms they don't give.</span></label>
+  <label>Campaign page (where you submit) <input name="brief_url" type="url" placeholder="https://contentrewards.com/…" value="{{ (prefill or {}).brief_url or '' }}"></label>
+      <button class="go small">Next: read the brief</button>
     </form>
     <div class="small muted">Its footage folder is created on the laptop: {{ library_dir or 'Campaigns' }}\{{ (c.media_folder or c.name) }}\&lt;bounty name&gt;</div>
   </details>

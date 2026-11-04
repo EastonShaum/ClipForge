@@ -303,3 +303,9 @@ From Easton's update brief (research report, Oct 2026) and Content Rewards' own 
 - A Scout, brief or selection call whose answer was cut off or didn't parse still cost money, but the exception was raised before `api_costs` was written, so the budget cap undercounted.
 - All three now go through `stages/llm.structured`. It streams the call (which allows a long answer), always prices the response, and raises `PaidFailure` with that cost when the answer stopped early or doesn't match the format. The Pi's job runner logs it as "(failed)" in `api_costs`. A remote worker sends it with `/fail`, and the Pi logs it. Handlers still never touch the DB.
 - Limits: Scout 64K output tokens, brief 32K, selection 32K. Thinking is on by default on Haiku 5.5 and counts in these limits.
+
+## D46. A new bounty reads its brief before asking for terms (2026-11-04)
+- Adding a bounty asked for about 20 terms by hand before the brief, even though the reader fills most of them. A brief pasted as text was handed to selection but never read, so its rules, names and terms stayed empty (Raw Law Media's bounty had a 6,388-character brief and no fields filled).
+- **Step 1** ("Add bounty" or "Add campaign") asks for the brief text, requirement screenshots and the campaign page. Platforms, tags and live channels are under "More". Scout's terms ride along as hidden fields.
+- **Step 2** (`/campaigns/<c>/bounties/<b>/setup`) refreshes itself while the reader works, then applies what it read (filling only empty fields) and shows a form with just the fields the brief didn't give. Empty fields leave the bounty as it is. With no brief at all, every field is asked for.
+- A pasted brief is read like a screenshot: it's stored as `assets/briefs/t<bounty>-<sha>.txt`, and a brief edited in Settings replaces it and is read again.
