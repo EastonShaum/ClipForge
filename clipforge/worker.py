@@ -133,9 +133,9 @@ class RemoteClient:
         self.http.post(f"/api/worker/jobs/{job_id}/defer",
                        json={"seconds": seconds, "reason": reason}).raise_for_status()
 
-    def fail(self, job_id: int, error: str) -> None:
+    def fail(self, job_id: int, error: str, cost: dict | None = None) -> None:
         self.http.post(f"/api/worker/jobs/{job_id}/fail",
-                       json={"error": error}).raise_for_status()
+                       json={"error": error, "cost": cost}).raise_for_status()
 
 
 def run_remote(base_url: str, kinds: list[str], idle_s: float = 10.0):
@@ -197,4 +197,4 @@ def run_remote(base_url: str, kinds: list[str], idle_s: float = 10.0):
             client.defer(job["id"], e.seconds, str(e))
         except Exception as e:  # noqa: BLE001
             log.exception("job %s failed", job["id"])
-            client.fail(job["id"], f"{type(e).__name__}: {e}")
+            client.fail(job["id"], f"{type(e).__name__}: {e}", getattr(e, "meta", None))

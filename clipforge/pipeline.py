@@ -366,6 +366,7 @@ def run_local_job(conn: sqlite3.Connection, job: sqlite3.Row, s: Settings | None
         return "deferred"
     except Exception as e:  # noqa: BLE001 - any failure is recorded on the job
         log.exception("job %s (%s) failed", job["id"], job["kind"])
+        costs.record_failed(conn, job["kind"], getattr(e, "meta", None), job["source_id"])
         state = jobqueue.fail(conn, job["id"], f"{type(e).__name__}: {e}")
         if state == "dead":
             mark_failed_source(conn, job, str(e))

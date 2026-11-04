@@ -52,6 +52,16 @@ def record(
     )
 
 
+def record_failed(conn: sqlite3.Connection, stage: str, meta: dict | None,
+                  source_id: int | None = None) -> None:
+    """A paid call whose answer was unusable (stages.llm.PaidFailure) is still billed."""
+    if not meta:
+        return
+    record(conn, provider=meta["provider"], model=meta["model"], stage=stage,
+           units=f"{meta.get('tokens_in', 0)} in, {meta.get('tokens_out', 0)} out (failed)",
+           usd=meta.get("usd", 0.0), usd_equiv=meta.get("usd_equiv"), source_id=source_id)
+
+
 def month_spend(conn: sqlite3.Connection) -> float:
     start = datetime.now(UTC).strftime("%Y-%m-01T00:00:00Z")
     row = conn.execute(

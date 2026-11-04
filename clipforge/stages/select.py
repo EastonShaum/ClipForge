@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from clipforge.config import Settings
 from clipforge.costs import CLI_ALIAS_TO_MODEL, llm_cost
+from clipforge.stages.llm import structured
 
 PROMPTS = Path(__file__).resolve().parent.parent / "prompts"
 
@@ -166,25 +167,11 @@ def call_claude_cli(s: Settings, prompt: str) -> tuple[Selection, dict]:
 
 
 def call_anthropic(s: Settings, prompt: str) -> tuple[Selection, dict]:
-    import anthropic
-
     from clipforge.stages.transcribe import MissingKey
 
     if not s.anthropic_api_key:
         raise MissingKey("CF_ANTHROPIC_API_KEY is not set")
-    client = anthropic.Anthropic(api_key=s.anthropic_api_key or None, max_retries=4)
-    resp = client.messages.parse(
-        model=s.select_model,
-        max_tokens=16000,
-        system="You select short-form video clips.",
-        messages=[{"role": "user", "content": prompt}],
-        output_format=Selection,
-    )
-    tin, tout = resp.usage.input_tokens, resp.usage.output_tokens
-    usd = llm_cost(s.select_model, tin, tout)
-    meta = {"provider": "anthropic", "model": s.select_model, "tokens_in": tin,
-            "tokens_out": tout, "usd": usd, "usd_equiv": usd}
-    return resp.parsed_output, meta
+    return structured(s, Selection, prompt, 32000, system="You select short-form video clips.")
 
 
 def call_fake(s: Settings, words: list[dict]) -> tuple[Selection, dict]:

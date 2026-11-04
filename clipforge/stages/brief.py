@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from clipforge.config import Settings
 from clipforge.costs import llm_cost
 from clipforge.stages import screenshot
+from clipforge.stages.llm import structured
 
 PROMPT = """This is a screenshot of the requirements ("brief") for a paid clipping campaign: \
 clippers cut short videos from the brand's footage and get paid per view.
@@ -75,23 +76,12 @@ def read_brief(s: Settings, image_path: Path) -> tuple[dict, dict]:
                          "tokens_in": 0, "tokens_out": 0}
     if s.select_provider != "anthropic":
         raise ValueError("reading screenshots needs CF_SELECT_PROVIDER=anthropic")
-    import anthropic
-
     from clipforge.stages.transcribe import MissingKey
 
     if not s.anthropic_api_key:
         raise MissingKey("CF_ANTHROPIC_API_KEY is not set")
-    client = anthropic.Anthropic(api_key=s.anthropic_api_key, max_retries=4)
-    resp = client.messages.parse(
-        model=s.select_model,
-        max_tokens=16000,  # room for thinking (on by default) plus the answer
-        messages=[{"role": "user", "content": screenshot.content(image_path, PROMPT)}],
-        output_format=Brief,
-    )
-    tin, tout = resp.usage.input_tokens, resp.usage.output_tokens
-    usd = llm_cost(s.select_model, tin, tout)
-    return resp.parsed_output.model_dump(), {"provider": "anthropic", "model": s.select_model,
-                                             "tokens_in": tin, "tokens_out": tout, "usd": usd}
+    brief, meta = structured(s, Brief, screenshot.content(image_path, PROMPT), 32000)
+    return brief.model_dump(), meta
 
 
 def estimate_usd(s: Settings) -> float:

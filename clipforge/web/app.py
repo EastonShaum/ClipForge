@@ -1365,10 +1365,12 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
 
     class FailIn(BaseModel):
         error: str
+        cost: dict | None = None  # a paid call that failed (stages.llm.PaidFailure)
 
     @app.post("/api/worker/jobs/{job_id}/fail", dependencies=[Worker])
     def api_fail(job_id: int, body: FailIn, conn: DB):
         job = _job(conn, job_id)
+        costs.record_failed(conn, job["kind"], body.cost, job["source_id"])
         if jobqueue.fail(conn, job_id, body.error) == "dead":
             pipeline.mark_failed_source(conn, job, body.error)
         return {"ok": True}

@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from clipforge.config import Settings
 from clipforge.costs import llm_cost
 from clipforge.stages import screenshot
+from clipforge.stages.llm import structured
 from clipforge.stages.screenshot import NotAnImage, prepare_image  # noqa: F401 - app imports these
 
 PROMPT = """This is a screenshot of a paid clipping marketplace: Content Rewards \
@@ -109,28 +110,14 @@ def read_screenshot(s: Settings, image_path: Path) -> tuple[list[dict], dict]:
                          "tokens_in": 0, "tokens_out": 0}
     if s.select_provider != "anthropic":
         raise ValueError("reading screenshots needs CF_SELECT_PROVIDER=anthropic")
-    import anthropic
-
     from clipforge.stages.transcribe import MissingKey
 
     if not s.anthropic_api_key:
         raise MissingKey("CF_ANTHROPIC_API_KEY is not set")
-    client = anthropic.Anthropic(api_key=s.anthropic_api_key, max_retries=4)
     # A full marketplace page is 40+ bounties at ~200 tokens each, after several thousand
-    # tokens of thinking (on by default, and it counts here). That needs more than a
-    # non-streaming call may ask for, so stream it.
-    with client.messages.stream(
-        model=s.select_model,
-        max_tokens=64000,
-        messages=[{"role": "user", "content": screenshot.content(image_path, PROMPT)}],
-        output_format=ScoutRead,
-    ) as stream:
-        resp = stream.get_final_message()
-    tin, tout = resp.usage.input_tokens, resp.usage.output_tokens
-    usd = llm_cost(s.select_model, tin, tout)
-    meta = {"provider": "anthropic", "model": s.select_model, "tokens_in": tin,
-            "tokens_out": tout, "usd": usd}
-    return [clean(b) for b in resp.parsed_output.bounties], meta
+    # tokens of thinking.
+    read, meta = structured(s, ScoutRead, screenshot.content(image_path, PROMPT), 64000)
+    return [clean(b) for b in read.bounties], meta
 
 
 def estimate_usd(s: Settings) -> float:

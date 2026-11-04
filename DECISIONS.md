@@ -298,3 +298,8 @@ From Easton's update brief (research report, Oct 2026) and Content Rewards' own 
 ## D44. Scout reads a whole marketplace page (2026-11-04)
 - A tall Content Rewards screenshot (7 slices, 50 bounties) failed twice with "Invalid JSON: EOF". Haiku 5.5 thinks by default, and thinking counts against `max_tokens`. About 6K tokens of thinking plus about 200 tokens per bounty overran the 8K limit, and 16K wasn't enough either.
 - The Scout reader now streams with `max_tokens=64000` (non-streaming calls can't ask for that much), and the brief reader's limit went from 4K to 16K. This page took 21K output tokens ($0.012).
+
+## D45. Failed paid calls are logged (2026-11-04)
+- A Scout, brief or selection call whose answer was cut off or didn't parse still cost money, but the exception was raised before `api_costs` was written, so the budget cap undercounted.
+- All three now go through `stages/llm.structured`. It streams the call (which allows a long answer), always prices the response, and raises `PaidFailure` with that cost when the answer stopped early or doesn't match the format. The Pi's job runner logs it as "(failed)" in `api_costs`. A remote worker sends it with `/fail`, and the Pi logs it. Handlers still never touch the DB.
+- Limits: Scout 64K output tokens, brief 32K, selection 32K. Thinking is on by default on Haiku 5.5 and counts in these limits.
