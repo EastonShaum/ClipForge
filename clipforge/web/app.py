@@ -111,6 +111,19 @@ def create_app() -> FastAPI:
     conn.close()
     app = FastAPI(title="ClipForge", docs_url=None, redoc_url=None)
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
+
+    # D43: the phone's share sheet (Save video -> Photos) only works over https, so pages opened
+    # at the plain-http address go to the https one. Worker API calls and media aren't redirected.
+    https_base = s.https_base_url.rstrip("/")
+    https_host = httpx.URL(https_base).host if https_base else ""
+
+    @app.middleware("http")
+    async def to_https(request: Request, call_next):
+        if (https_host and request.method == "GET" and request.url.hostname != https_host
+                and not request.url.path.startswith(("/api/", "/media/", "/static/"))):
+            q = f"?{request.url.query}" if request.url.query else ""
+            return RedirectResponse(f"{https_base}{request.url.path}{q}", status_code=307)
+        return await call_next(request)
     app.mount("/media/clips", StaticFiles(directory=s.clips_dir), name="clips")
     app.mount("/media/assets", StaticFiles(directory=s.assets_dir), name="assets")
     _routes(app)

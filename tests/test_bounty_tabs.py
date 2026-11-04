@@ -158,3 +158,18 @@ def test_post_page_points_plain_http_at_the_https_ui(client, conn, monkeypatch):
     _clip(conn, 1, 1, "Ep4 hook", "approved")
     post = client.get("/campaigns/1/bounties/1/post").text
     assert 'href="https://pi.example.ts.net:8443/campaigns/1/bounties/1/post"' in post
+
+
+def test_plain_http_pages_go_to_the_https_ui(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from clipforge import config
+    from clipforge.web.app import create_app
+    monkeypatch.setenv("CF_HTTPS_BASE_URL", "https://pi.example.ts.net:8443")
+    config.get_settings.cache_clear()
+    c = TestClient(create_app(), follow_redirects=False)
+    r = c.get("/campaigns/1/bounties/1/post?x=1")
+    assert r.status_code == 307
+    assert r.headers["location"] == "https://pi.example.ts.net:8443/campaigns/1/bounties/1/post?x=1"
+    assert c.get("/api/worker/version").status_code != 307  # the laptop worker isn't redirected
+    assert c.get("/", headers={"host": "pi.example.ts.net:8443"}).status_code != 307
