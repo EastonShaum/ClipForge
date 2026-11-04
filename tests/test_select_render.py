@@ -117,3 +117,17 @@ def test_hook_card_keeps_emojis_with_their_words(tmp_path):
     assert size and size[0] <= render.HOOK_MAX_W and (tmp_path / "c.png").is_file()
     assert hookcard.make_card("   ", tmp_path / "e.png", font, 820) is None
 
+
+
+def test_a_bounty_sets_clip_length_and_a_watermark(settings, tmp_path):
+    """D47: the brief's 20-90 s replaces the default, and logos can be a corner watermark."""
+    assert select.clip_lengths(settings, None, False) == (settings.min_clip_s,
+                                                          settings.max_clip_s)
+    assert select.clip_lengths(settings, {"min_clip_s": 20, "max_clip_s": 90}, False) == (20, 90)
+    p = select.build_prompt(settings, "{min_s}-{max_s}", words=[], title="t", category="",
+                            feedback="", bounty={"min_clip_s": 20, "max_clip_s": 90})
+    assert p == "20-90"
+    g = render.filter_graph("blurfill", None, settings.fonts_dir, logos=1,
+                            watermark={"handle": "@rawlawmedia", "opacity": 0.6})
+    assert "colorchannelmixer=aa=0.60" in g and "overlay=90:300" in g
+    assert "text='@rawlawmedia'" in g and "color=black@0.55" not in g  # no strip

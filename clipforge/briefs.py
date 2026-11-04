@@ -60,8 +60,14 @@ def _terms(conn: sqlite3.Connection, bounty_id: int) -> dict:
         for k in ("people", "must_mention"):  # D40
             if names := [n.strip() for n in b.get(k) or [] if n.strip()]:
                 out[k] = ", ".join(names)
+        lo, hi = b.get("min_seconds") or -1, b.get("max_seconds") or -1
+        if lo > 0 and (hi <= 0 or hi > lo):  # D47
+            out["min_clip_s"] = float(lo)
+        if hi > 0 and hi > lo:
+            out["max_clip_s"] = float(hi)
         for src, dst in (("ai_video_banned", "ai_video_banned"),
-                         ("onscreen_ad_label", "onscreen_ad_label_required")):
+                         ("onscreen_ad_label", "onscreen_ad_label_required"),
+                         ("mention_all", "mention_all")):
             if (b.get(src) or "").lower() == "yes":
                 out[dst] = True
     return out
@@ -84,6 +90,16 @@ def apply(conn: sqlite3.Connection, bounty_id: int) -> list[str]:
         if plats != c["allowed_platforms"]:
             camp_sets["allowed_platforms"] = plats
             changes.append(f"platforms: {plats}")
+    # D47: a brief that asks for a watermark gets one: logos in the corner with its handle.
+    rule = " ".join(m["logo_rule"])
+    if re.search(r"\bwatermark", rule, re.I) and c["logo_style"] != "watermark":
+        camp_sets["logo_style"] = "watermark"
+        if (h := re.search(r"@[\w.]+", rule)) and not c["logo_handle"]:
+            camp_sets["logo_handle"] = h.group(0).rstrip(".")
+        if op := re.search(r"(\d{2})\s*(?:-|–|to)?\s*(\d{2})?\s*%\s*opacity", rule, re.I):
+            camp_sets["logo_opacity"] = int(op.group(2) or op.group(1)) / 100
+        changes.append("logos as a watermark" + (f" with {camp_sets['logo_handle']}"
+                                                  if "logo_handle" in camp_sets else ""))
     if m["end_date"] and re.fullmatch(r"\d{4}-\d{2}-\d{2}", m["end_date"][-1]) \
             and m["end_date"][-1] != b["end_date"]:
         sets["end_date"] = m["end_date"][-1]
@@ -105,7 +121,9 @@ def apply(conn: sqlite3.Connection, bounty_id: int) -> list[str]:
                      ("flat_fee_bonus_usd", "bonus"), ("budget_total_usd", "budget"),
                      ("budget_remaining_usd", "budget left"), ("audience_rules", "audience"),
                      ("footage_scope", "footage"), ("people", "people"),
-                     ("must_mention", "must name"), ("ai_video_banned", "AI video banned"),
+                     ("must_mention", "must name"), ("mention_all", "caption names all of them"),
+                     ("min_clip_s", "clips at least (s)"), ("max_clip_s", "clips at most (s)"),
+                     ("ai_video_banned", "AI video banned"),
                      ("onscreen_ad_label_required", "on-screen #ad label")):
         if k not in terms:
             continue

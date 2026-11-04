@@ -13,7 +13,7 @@ from clipforge.db import connect, init_db
 from clipforge.ingest import add_source, source_key
 from clipforge.stages.fetch import fetch, local_path
 from clipforge.web.app import create_app
-from clipforge.worker import run_local
+from clipforge.worker import WORKER_PROTOCOL, run_local
 
 FIXTURE = Path(__file__).parent / "fixtures" / "sample.mp4"
 WIN = r"C:\Users\Easton\Clipping\Campaigns\ManOn\Man On_Ep4_Dennis_V2.mp4"
@@ -131,7 +131,7 @@ def test_render_context_carries_logo_for_remote_worker(conn, campaign_id, tmp_pa
     client.post("/sources", data={"campaign_id": str(campaign_id), "urls": WIN})
     r = client.post("/api/worker/claim", headers=H, json={
         "worker": "eastons-laptop-remote-42", "host": "eastons-laptop", "kinds": ["fetch"],
-        "protocol": 7})
+        "protocol": WORKER_PROTOCOL})
     assert r.status_code == 200 and r.json()["ctx"]["url"] == WIN
     # Skip ahead to a render job for this source and check its context.
     from clipforge.pipeline import build_context

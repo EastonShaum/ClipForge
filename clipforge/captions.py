@@ -16,12 +16,14 @@ PLATFORM_REMINDER = {
 
 
 def build_caption(*, title: str, hook: str, category: str, required_tags: str,
-                  caption_notes: str, disclosure: str, must_mention: str = "") -> str:
+                  caption_notes: str, disclosure: str, must_mention: str = "",
+                  mention_all: bool = False) -> str:
     """Disclosure goes first: FTC guidance says it must be hard to miss, not buried in hashtags.
-    A brief that says the caption must name someone gets the first name up front (D40)."""
+    A brief that says the caption must name someone gets the missing name(s) up front (D40;
+    all of them when the brief requires every name, D47)."""
     lead = (title or hook).strip()
-    if not mentions(lead, must_mention):
-        lead = f"{name_list(must_mention)[0]}: {lead}"
+    if miss := missing_names(f"{lead} {caption_notes}", must_mention, mention_all):
+        lead = f"{' x '.join(miss)}: {lead}"
     req = " ".join(t for t in required_tags.replace(",", " ").split() if t)
     niche = " ".join(NICHE_TAGS.get(category.lower().strip(), ["#clips"]))
     parts = [f"{disclosure.strip()} {lead}".strip() if disclosure.strip() else lead]
@@ -40,6 +42,30 @@ def name_list(names: str) -> list[str]:
         name, _, nick = n.partition("(")
         out += [x.strip() for x in (name, nick.rstrip(") ")) if x.strip()]
     return list(dict.fromkeys(out))
+
+
+def _groups(names: str) -> list[list[str]]:
+    """"Core Boys, StableRonaldo (Ron)" -> [["Core Boys"], ["StableRonaldo", "Ron"]]."""
+    out = []
+    for n in re.split(r"[,\n]", names):
+        name, _, nick = n.partition("(")
+        if g := [x.strip() for x in (name, nick.rstrip(") ")) if x.strip()]:
+            out.append(g)
+    return out
+
+
+def missing_names(text: str, names: str, all_: bool = False) -> list[str]:
+    """The names the text still has to add: none if it names one of them (or, with all_, the
+    first form of each one it doesn't name). Hashtags and @handles don't count."""
+    groups = _groups(names)
+    words = re.sub(r"[#@][\w.]+", " ", text)
+
+    def named(g):
+        return any(re.search(r"\b" + r"\s*".join(map(re.escape, n.split())) + r"\b", words,
+                             re.I) for n in g)
+    if all_:
+        return [g[0] for g in groups if not named(g)]
+    return [] if not groups or any(named(g) for g in groups) else [groups[0][0]]
 
 
 def mentions(text: str, names: str) -> bool:

@@ -39,6 +39,7 @@ class Deferred(Exception):
 def _source(conn, sid: int) -> sqlite3.Row:
     return conn.execute(
         "SELECT s.*, c.category, c.name AS campaign_name, c.disclosure, c.logo_path,"
+        " c.logo_style, c.logo_handle, c.logo_opacity,"
         " b.onscreen_ad_label_required, b.layout bounty_layout, b.facecam FROM sources s"
         " JOIN campaigns c ON c.id = s.campaign_id LEFT JOIN bounties b ON b.id = s.bounty_id"
         " WHERE s.id = ?", (sid,)
@@ -74,17 +75,16 @@ def build_context(conn: sqlite3.Connection, s: Settings, job: sqlite3.Row) -> di
         words = _words(conn, src["id"])
         stream = live.stream_info(conn, src["id"])
         pv = pick_prompt_version(conn, live=bool(stream))
+        bounty = _bounty(conn, src["bounty_id"])
         prompt = select_stage.build_prompt(
             s, pv["body"], words=words, title=src["title"], category=src["category"],
-            feedback=build_feedback(conn, None), live=stream,
-            bounty=_bounty(conn, src["bounty_id"]),
+            feedback=build_feedback(conn, None), live=stream, bounty=bounty,
         )
         try:
             costs.check_budget(conn, select_stage.estimate_usd(s, prompt))
         except costs.BudgetExceeded as e:
             raise Deferred(str(e), 6 * 3600) from e
-        lengths = ((s.live_min_clip_s, s.live_max_clip_s) if stream
-                   else (s.min_clip_s, s.max_clip_s))
+        lengths = select_stage.clip_lengths(s, bounty, bool(stream))
         return {"source_id": src["id"], "prompt": prompt, "words": words,
                 "prompt_version_id": pv["id"], "min_s": lengths[0], "max_s": lengths[1]}
     if kind == "render":
@@ -99,7 +99,10 @@ def build_context(conn: sqlite3.Connection, s: Settings, job: sqlite3.Row) -> di
                 # D38: the label is burned in when the bounty's brief requires it.
                 "onscreen": bool((s and s.onscreen_disclosure)
                                  or src["onscreen_ad_label_required"]),
-                "layout": layout_for(s, src, info, cand["id"])}
+                "layout": layout_for(s, src, info, cand["id"]),
+                # D47: logos as a corner watermark with the brand's handle, when the brief asks.
+                "watermark": ({"handle": src["logo_handle"], "opacity": src["logo_opacity"]}
+                              if src["logo_style"] == "watermark" else None)}
     if kind == "scout":
         shot = _shot(conn, job)
         try:
@@ -145,7 +148,8 @@ def run_handler(s: Settings, kind: str, ctx: dict, out_dir: Path | None = None) 
                                        disclosure=(_onscreen_disclosure(ctx.get("disclosure"))
                                                    if ctx.get("onscreen", s.onscreen_disclosure)
                                                    else ""),
-                                       logo_paths=_logos(s, ctx.get("logo_rels", [])))
+                                       logo_paths=_logos(s, ctx.get("logo_rels", [])),
+                                       watermark=ctx.get("watermark"))
         if kind == "scout":
             bounties, meta = scout_stage.read_screenshot(s, s.assets_dir / ctx["image_rel"])
             return {"shot_id": ctx["shot_id"], "bounties": bounties, "meta": meta}
@@ -267,7 +271,8 @@ def apply_result(conn: sqlite3.Connection, s: Settings, job: sqlite3.Row, result
                          (now, sid))
         elif kind == "render":
             cand = conn.execute(
-                "SELECT c.*, s.campaign_id, b.required_tags bounty_tags, b.must_mention"
+                "SELECT c.*, s.campaign_id, b.required_tags bounty_tags, b.must_mention,"
+                " b.mention_all"
                 " FROM candidates c"
                 " JOIN sources s ON s.id=c.source_id LEFT JOIN bounties b ON b.id=s.bounty_id"
                 " WHERE c.id=?", (job["candidate_id"],)).fetchone()
@@ -281,7 +286,8 @@ def apply_result(conn: sqlite3.Connection, s: Settings, job: sqlite3.Row, result
                                     category=camp["category"], required_tags=tags,
                                     caption_notes=camp["caption_notes"],
                                     disclosure=camp["disclosure"],
-                                    must_mention=cand["must_mention"] or "")
+                                    must_mention=cand["must_mention"] or "",
+                                    mention_all=bool(cand["mention_all"]))
             conn.execute(
                 """INSERT INTO clips (candidate_id, path, size_bytes, render_s, rendered_by, caption)
                    VALUES (?,?,?,?,?,?)

@@ -95,6 +95,13 @@ ADDED_COLUMNS = [("campaigns", "logo_path", "TEXT"), ("posts", "submitted_at", "
                  # D40: who's in the footage, and the names a caption must mention.
                  ("bounties", "people", "TEXT NOT NULL DEFAULT ''"),
                  ("bounties", "must_mention", "TEXT NOT NULL DEFAULT ''"),
+                 # D47: every must-name name (not just one), the brief's clip length, and logos
+                 # as a corner watermark with the brand's handle.
+                 ("bounties", "mention_all", "INTEGER NOT NULL DEFAULT 0"),
+                 ("bounties", "min_clip_s", "REAL"), ("bounties", "max_clip_s", "REAL"),
+                 ("campaigns", "logo_style", "TEXT NOT NULL DEFAULT 'strip'"),
+                 ("campaigns", "logo_handle", "TEXT NOT NULL DEFAULT ''"),
+                 ("campaigns", "logo_opacity", "REAL NOT NULL DEFAULT 0.6"),
                  ("campaigns", "facecam", "TEXT"),
                  ("posts", "account_id", "INTEGER"),
                  ("posts", "review_status", "TEXT"),

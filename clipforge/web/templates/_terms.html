@@ -24,6 +24,12 @@
   <span class="small muted" style="font-weight:400">Names viewers know. Hooks use them instead of "a streamer".</span></label>{% endif %}
 {% if on('must_mention') %}<label>Caption must name one of <input name="must_mention" placeholder="Core Boys, Lacy, Ron" value="{{ t.must_mention or '' }}">
   <span class="small muted" style="font-weight:400">From the brief. The hook and caption are checked for one.</span></label>{% endif %}
+{% if on('mention_all') %}<label class="check"><input type="checkbox" name="mention_all" value="true" {{ 'checked' if t.mention_all }}>
+  The caption must name all of them (the brief says "include both…")</label>{% endif %}
+{% if on('min_clip_s') %}<label>Clip length (s)
+  <span class="row"><input name="min_clip_s" type="number" step="1" min="1" placeholder="{{ default_len[0]|int }}" value="{{ t.min_clip_s|int if t.min_clip_s else '' }}" style="width:5em" aria-label="shortest">
+  to <input name="max_clip_s" type="number" step="1" min="2" placeholder="{{ default_len[1]|int }}" value="{{ t.max_clip_s|int if t.max_clip_s else '' }}" style="width:5em" aria-label="longest"></span>
+  <span class="small muted" style="font-weight:400">From the brief. Empty: {{ default_len[0]|int }}–{{ default_len[1]|int }} s.</span></label>{% endif %}
 {% if on('pays_on') %}<label>YouTube pays on
   <select name="pays_on">{% for k, l in [('unknown','not stated'),('views','public views'),('engaged_views','engaged views')] %}<option value="{{ k }}" {{ 'selected' if (t.pays_on or 'unknown') == k }}>{{ l }}</option>{% endfor %}</select>
 </label>{% endif %}

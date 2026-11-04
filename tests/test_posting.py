@@ -121,3 +121,20 @@ def test_onscreen_label_follows_the_bounty(conn, campaign_id):
     assert build_context(conn, get_settings(), job)["onscreen"] is False
     conn.execute("UPDATE bounties SET onscreen_ad_label_required=1")
     assert build_context(conn, get_settings(), job)["onscreen"] is True
+
+
+def test_a_brief_can_require_every_name(campaign_id, conn):
+    """D47: Raw Law Media's brief wants both "John Morgan" and "Raw Law Media" in the caption."""
+    names = "John Morgan, Raw Law Media"
+    cap = "#ad John Morgan on luck @rawlawmedia"
+    assert posting.caption_problems(cap, "@rawlawmedia", "#ad", names) == []
+    assert posting.caption_problems(cap, "@rawlawmedia", "#ad", names, True) == [
+        "must name Raw Law Media"]
+    assert posting.fix_caption("Three types of luck", "", "#ad", names, True) == \
+        "#ad John Morgan x Raw Law Media: Three types of luck"
+    from clipforge.captions import build_caption
+    cap = build_caption(title="John Morgan on three types of luck", hook="", category="podcast",
+                        required_tags="@rawlawmedia",
+                        caption_notes="From the Raw Law Media podcast.", disclosure="#ad",
+                        must_mention=names, mention_all=True)
+    assert cap.startswith("#ad John Morgan on three types of luck\n\nFrom the Raw Law Media")

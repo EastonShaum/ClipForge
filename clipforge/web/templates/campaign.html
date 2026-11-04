@@ -71,8 +71,17 @@
     {% else %}
     <span class="muted">No logo. Add one only if the brief requires it; some briefs ban extra logos.</span>
     {% endfor %}
-    {% if c.logo_path %}<span>Burned into every clip as a row under the captions, in this order.</span>{% endif %}
+    {% if c.logo_path %}<span>Burned into every clip, in this order.</span>{% endif %}
   </div>
+  <form method="post" action="/campaigns/{{ c.id }}/logo/style" class="row small">
+    <select name="style" aria-label="Logo style">
+      <option value="strip" {{ 'selected' if c.logo_style != 'watermark' }}>Strip above the picture</option>
+      <option value="watermark" {{ 'selected' if c.logo_style == 'watermark' }}>Watermark, top left</option>
+    </select>
+    <label>Handle under it <input name="handle" placeholder="@brand" value="{{ c.logo_handle }}" style="width:10em"></label>
+    <label>Opacity <input name="opacity" type="number" step="0.05" min="0.1" max="1" value="{{ c.logo_opacity }}" style="width:5em"></label>
+    <button class="small">Save</button>
+  </form>
   <form method="post" action="/campaigns/{{ c.id }}/logo" enctype="multipart/form-data" class="row small">
     <input type="file" name="logo" accept="image/png,image/jpeg,image/webp" required>
     <button class="small">Add logo</button>

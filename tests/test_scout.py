@@ -155,3 +155,23 @@ def test_a_new_bounty_reads_its_brief_first_then_asks_for_the_rest(client, conn,
     r = client.post("/campaigns/1/bounties", data={"name": "ep3"})
     assert "fill in the terms by hand" in r.text and 'name="end_date"' in r.text
     assert 'name="docs"' in client.get("/campaigns").text
+
+
+def test_a_brief_sets_length_all_names_and_watermark(conn, campaign_id):
+    import json
+
+    from clipforge import briefs
+    bid = conn.execute("SELECT id FROM bounties").fetchone()[0]
+    conn.execute("INSERT INTO campaign_docs (campaign_id, bounty_id, path, sha, extracted)"
+                 " VALUES (?,?,?,?,?)", (campaign_id, bid, "d.txt", "s", json.dumps({
+                     "min_seconds": 20, "max_seconds": 90, "must_mention": ["John Morgan",
+                                                                            "Raw Law Media"],
+                     "mention_all": "yes", "logo_rule": "The Raw Law Media logo with"
+                     " @rawlawmedia as a visible watermark, at about 50-60% opacity."})))
+    changes = briefs.apply(conn, bid)
+    b = conn.execute("SELECT * FROM bounties WHERE id=?", (bid,)).fetchone()
+    assert (b["min_clip_s"], b["max_clip_s"], b["mention_all"]) == (20, 90, 1)
+    c = conn.execute("SELECT * FROM campaigns WHERE id=?", (campaign_id,)).fetchone()
+    assert (c["logo_style"], c["logo_handle"], c["logo_opacity"]) == ("watermark",
+                                                                     "@rawlawmedia", 0.6)
+    assert "logos as a watermark with @rawlawmedia" in changes

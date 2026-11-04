@@ -84,6 +84,13 @@ def brief_block(bounty: dict | None) -> str:
     return "\n".join(x for x in lines if x) or "No brief entered: any strong moment counts."
 
 
+def clip_lengths(s: Settings, bounty: dict | None, live: bool) -> tuple[float, float]:
+    """(min_s, max_s): the bounty's (from its brief, D47) where set, else the default."""
+    lo, hi = (s.live_min_clip_s, s.live_max_clip_s) if live else (s.min_clip_s, s.max_clip_s)
+    b = bounty or {}
+    return float(b.get("min_clip_s") or lo), float(b.get("max_clip_s") or hi)
+
+
 def build_prompt(s: Settings, template: str, *, words: list[dict], title: str, category: str,
                  feedback: str, rubric: str | None = None, live: dict | None = None,
                  bounty: dict | None = None) -> str:
@@ -91,12 +98,13 @@ def build_prompt(s: Settings, template: str, *, words: list[dict], title: str, c
     {streamer} and {people} (the live prompt's extra variables). bounty: the source's bounty,
     for {brief} and, on ordinary footage, {people} (D40)."""
     guests = ((live or {}).get("guests") or (bounty or {}).get("people") or "").strip()
+    min_s, max_s = clip_lengths(s, bounty, bool(live))
     return template.format(
         category=category or "long-form",
         title=title.replace('"', "'"),
         n=s.live_candidates_requested if live else s.candidates_requested,
-        min_s=int(s.live_min_clip_s if live else s.min_clip_s),
-        max_s=int(s.live_max_clip_s if live else s.max_clip_s),
+        min_s=int(min_s),
+        max_s=int(max_s),
         streamer=(live or {}).get("streamer", ""),
         people=(f"{'Guests at this stream' if live else 'People in this footage'}: {guests}"
                 if guests else f"{'Guests at this stream' if live else 'People'}: none listed"),

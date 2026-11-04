@@ -33,6 +33,11 @@ LOGO_H = 120
 LOGO_GAP = 40
 LOGO_PAD = (24, 12)  # strip padding x, y
 LOGO_STRIP_H = LOGO_H + 2 * LOGO_PAD[1]
+# A brief that asks for a watermark instead (D47, e.g. Raw Law Media: "left side, at least 90 px
+# from the left and 300 px below the top, 50-60% opacity, throughout"): the logos and the brand's
+# handle under them, semi-transparent, in the top-left corner. No strip, nothing recolored.
+WM_X, WM_Y, WM_H = 90, 300, 130
+WM_HANDLE_SIZE = 38
 
 
 # Layouts (D38), so an account's clips don't all share one template:
@@ -145,14 +150,41 @@ def build_ass(dur_ms: int, font: str, disclosure: str) -> str:
     ]) + "\n"
 
 
+def _watermark(logos: int, wm: dict, fonts_dir: Path, cur: str) -> tuple[list[str], str]:
+    """The corner watermark: logos in a row at WM_H tall, then the handle under them."""
+    op = min(1.0, max(0.1, float(wm.get("opacity") or 0.6)))
+    graph = []
+    if logos:
+        graph += [f"[{i}:v]scale=-1:{WM_H},format=rgba,pad=iw+{LOGO_GAP}:ih:0:0:color=black@0"
+                  f"[w{i}]" for i in range(1, logos + 1)]
+        graph.append("".join(f"[w{i}]" for i in range(1, logos + 1))
+                     + (f"hstack=inputs={logos}" if logos > 1 else "null")
+                     + f",colorchannelmixer=aa={op:.2f}[wm]")
+        graph.append(f"{cur}[wm]overlay={WM_X}:{WM_Y}:format=auto[wmo]")
+        cur = "[wmo]"
+    if handle := re.sub(r"[^\w@.\- ]", "", wm.get("handle") or "").strip():
+        y = WM_Y + (WM_H + 12 if logos else 0)
+        font = _filter_path(fonts_dir / "Montserrat-ExtraBold.ttf")
+        graph.append(f"{cur}drawtext=fontfile={font}:text='{handle}':fontsize={WM_HANDLE_SIZE}:"
+                     f"fontcolor=white@{op:.2f}:borderw=3:bordercolor=black@{op * 0.6:.2f}:"
+                     f"x={WM_X}:y={y}[wmt]")
+        cur = "[wmt]"
+    return graph, cur
+
+
 def filter_graph(layout: str, ass_path: Path | None, fonts_dir: Path, logos: int = 0,
-                 hook: bool = False, src: tuple[int, int] = (1920, 1080)) -> str:
+                 hook: bool = False, src: tuple[int, int] = (1920, 1080),
+                 watermark: dict | None = None) -> str:
     """Video filter graph. Input 0 is the source; inputs 1..logos are logo PNGs, then the hook
-    card PNG if there is one. Single-image inputs repeat their frame for the whole clip."""
+    card PNG if there is one. Single-image inputs repeat their frame for the whole clip.
+    watermark ({handle, opacity}): logos as a corner watermark instead of the strip."""
     base = _base(layout)
     logo_bottom, hook_top = placement(layout, *src)
     graph, cur = [base], "[base]"
-    if logos:
+    if watermark:
+        more, cur = _watermark(logos, watermark, fonts_dir, cur)
+        graph += more
+    elif logos:
         px, py = LOGO_PAD
         graph += [f"[{i}:v]scale=-1:{LOGO_H},format=rgba,"
                   f"pad=iw+{LOGO_GAP}:ih:{LOGO_GAP // 2}:0:color=black@0[l{i}]"
@@ -183,7 +215,7 @@ def _filter_path(p: Path) -> str:
 
 def render(s: Settings, *, media_path: str, start_ms: int, end_ms: int, hook: str,
            out_path: Path, work: Path, layout: str | None = None, disclosure: str = "",
-           logo_paths: list[str] | None = None) -> dict:
+           logo_paths: list[str] | None = None, watermark: dict | None = None) -> dict:
     work.mkdir(parents=True, exist_ok=True)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     ass = None
@@ -203,7 +235,7 @@ def render(s: Settings, *, media_path: str, start_ms: int, end_ms: int, hook: st
         *(["-i", str(card)] if has_card else []),
         "-filter_complex", filter_graph(layout, ass, s.fonts_dir,
                                         logos=len(logo_paths or []), hook=has_card,
-                                        src=probe_size(media_path)),
+                                        src=probe_size(media_path), watermark=watermark),
         "-map", "[v]", "-map", "0:a:0?",
         "-af", "loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000",
         "-c:v", "libx264", "-preset", s.render_preset, "-crf", str(s.render_crf),

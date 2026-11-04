@@ -104,6 +104,7 @@ MAX_RESULT_BYTES = 200_000_000  # a stage result (JSON); ~10 h of word timings i
 
 def create_app() -> FastAPI:
     s = get_settings()
+    templates.env.globals["default_len"] = (s.min_clip_s, s.max_clip_s)  # clip length form
     init_db()
     conn = connect()
     sync_prompts(conn)
@@ -180,8 +181,11 @@ def terms_from(form) -> dict:
     for k in ("brief_url", "audience_rules", "footage_scope", "brief_text", "people",
               "must_mention"):
         t[k] = (form.get(k) or "").strip()
-    for k in ("onscreen_ad_label_required", "ai_video_banned"):
+    for k in ("onscreen_ad_label_required", "ai_video_banned", "mention_all"):
         t[k] = form.get(k) in ("true", "on", True)
+    t["min_clip_s"], t["max_clip_s"] = _num(form.get("min_clip_s")), _num(form.get("max_clip_s"))
+    if t["min_clip_s"] and t["max_clip_s"] and t["min_clip_s"] >= t["max_clip_s"]:
+        raise ValueError("Clip length: the shortest must be under the longest")
     t["min_views"] = money.min_views_for(t)
     return t
 
@@ -475,7 +479,7 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
             " candidates ca ON ca.id=k.candidate_id")}
         for k in clips:
             k["problems"] = posting.caption_problems(k["caption"], tags, c["disclosure"],
-                                                     b["must_mention"])
+                                                     b["must_mention"], bool(b["mention_all"]))
             if not posting.mentions(k["hook_text"], b["must_mention"]):
                 k["problems"].append("on-screen text must name "
                                      + " or ".join(posting.name_list(b["must_mention"])[:3]))
@@ -621,14 +625,14 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
     def fix_caption(clip_id: int, conn: DB, next: str = Form("")):
         r = conn.execute(
             "SELECT k.caption, cp.required_tags ct, b.required_tags bt, cp.disclosure,"
-            " b.must_mention FROM clips k"
+            " b.must_mention, b.mention_all FROM clips k"
             " JOIN candidates c ON c.id=k.candidate_id JOIN sources s ON s.id=c.source_id"
             " JOIN campaigns cp ON cp.id=s.campaign_id LEFT JOIN bounties b ON b.id=s.bounty_id"
             " WHERE k.id=?", (clip_id,)).fetchone()
         if r:
             conn.execute("UPDATE clips SET caption=? WHERE id=?", (posting.fix_caption(
                 r["caption"], f"{r['ct']} {r['bt'] or ''}", r["disclosure"],
-                r["must_mention"] or ""), clip_id))
+                r["must_mention"] or "", bool(r["mention_all"])), clip_id))
         return back(_next(next, "/approved") + f"#clip{clip_id}", "Caption fixed")
 
     @app.post("/clips/{clip_id}/unreview")
@@ -820,6 +824,16 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
         return back(f"/campaigns/{cid}", "Logo added. New renders will include it."
                     + (f" Rendering {n} held clip(s)." if n else ""))
 
+    @app.post("/campaigns/{cid}/logo/style")
+    def campaign_logo_style(cid: int, conn: DB, style: str = Form("strip"),
+                            handle: str = Form(""), opacity: float = Form(0.6)):
+        """Logos as a strip above the picture, or a corner watermark with the handle (D47)."""
+        _camp_or_404(conn, cid)
+        conn.execute("UPDATE campaigns SET logo_style=?, logo_handle=?, logo_opacity=? WHERE"
+                     " id=?", ("watermark" if style == "watermark" else "strip", handle.strip(),
+                               min(1.0, max(0.1, opacity)), cid))
+        return back(f"/campaigns/{cid}", "Logo style saved. New renders use it.")
+
     @app.post("/campaigns/{cid}/logo/remove")
     def campaign_logo_remove(cid: int, conn: DB, rel: str = Form("")):
         remove_logo(conn, cid, rel or None)
@@ -871,8 +885,12 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
                             "budget_remaining_usd", "end_date") if b[k] is None]
         out += [k for k in ("brief_url", "audience_rules", "footage_scope", "people",
                             "must_mention") if not b[k]]
+        if b["min_clip_s"] is None and b["max_clip_s"] is None:
+            out.append("min_clip_s")
         if "youtube" in plats and b["pays_on"] == "unknown":
             out.append("pays_on")
+        if b["must_mention"] and not b["mention_all"]:
+            out.append("mention_all")
         return out + [k for k in ("onscreen_ad_label_required", "ai_video_banned") if not b[k]]
 
     @app.get("/campaigns/{cid}/bounties/{bid}/setup")

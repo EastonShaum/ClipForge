@@ -9,7 +9,7 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from clipforge import money
-from clipforge.captions import mentions, name_list  # noqa: F401 (used by the web app)
+from clipforge.captions import mentions, missing_names, name_list  # noqa: F401 (web app)
 from clipforge.config import get_settings
 from clipforge.db import utcnow
 from clipforge.live import _CHUNK_AT
@@ -42,22 +42,23 @@ def add_account(conn: sqlite3.Connection, platform: str, handle: str, niche: str
 # ---------- caption ----------
 
 def caption_problems(caption: str, required_tags: str, disclosure: str = "#ad",
-                     must_mention: str = "") -> list[str]:
+                     must_mention: str = "", mention_all: bool = False) -> list[str]:
     """What the caption is missing: the disclosure first, every required tag/mention, and one of
-    the names the brief says it must mention."""
+    the names the brief says it must mention (every one of them with mention_all)."""
     out = []
     if disclosure.strip() and not caption.lstrip().lower().startswith(disclosure.strip().lower()):
         out.append(f"{disclosure.strip()} must come first")
     have = {t.lower() for t in re.findall(r"[#@][\w.]+", caption)}
     out += [f"missing {t}" for t in dict.fromkeys(required_tags.replace(",", " ").split())
             if t.lower() not in have]
-    if not mentions(caption, must_mention):
-        out.append(f"must name {' or '.join(name_list(must_mention)[:3])}")
+    if miss := missing_names(caption, must_mention, mention_all):
+        out.append(f"must name {' and '.join(miss)}" if mention_all
+                   else f"must name {' or '.join(name_list(must_mention)[:3])}")
     return out
 
 
 def fix_caption(caption: str, required_tags: str, disclosure: str = "#ad",
-                must_mention: str = "") -> str:
+                must_mention: str = "", mention_all: bool = False) -> str:
     """Put the disclosure first, name the first must-mention name after it, and add the missing
     tags at the end."""
     text = caption.strip()
@@ -66,8 +67,8 @@ def fix_caption(caption: str, required_tags: str, disclosure: str = "#ad",
         text = text[len(d):].strip()
     elif d:
         text = re.sub(rf"(^|\s){re.escape(d)}(?=\s|$)", " ", text, flags=re.I).strip()
-    if not mentions(text, must_mention):
-        text = f"{name_list(must_mention)[0]}: {text}"
+    if miss := missing_names(text, must_mention, mention_all):
+        text = f"{' x '.join(miss)}: {text}"
     text = f"{d} {text}".strip()
     have = {t.lower() for t in re.findall(r"[#@][\w.]+", text)}
     missing = [t for t in dict.fromkeys(required_tags.replace(",", " ").split())

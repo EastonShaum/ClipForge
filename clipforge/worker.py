@@ -32,7 +32,8 @@ ALL_KINDS = ["fetch", "transcribe", "select", "render"]
 # 4: render context has no words; hook card needs Pillow (D31).
 # 5: select carries min_s/max_s, render carries layout (D33).
 # 6: layout "auto": camera or shared screen, per clip (D34)
-WORKER_PROTOCOL = 7  # 7: render carries "onscreen" (per-bounty #ad label) and new layouts (D38)
+# 7: render carries "onscreen" (per-bounty #ad label) and new layouts (D38)
+WORKER_PROTOCOL = 8  # 8: render carries "watermark" (logos as a corner watermark, D47)
 LIBRARY_SCAN_S = 60
 _stop = False
 
