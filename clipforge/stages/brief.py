@@ -40,6 +40,7 @@ when the brief gives one, e.g. "StableRonaldo (Ron)"
 (e.g. ["Core Boys", "Lacy"])
 - mention_all: "yes" if the caption must name every one of must_mention (e.g. "include both X \
 and Y"), "no" if any one is enough, else ""
+- subtitles: "yes" if the video itself must have subtitles or captions burned in, else ""
 - ai_video_banned and onscreen_ad_label: "yes" or "no" if the brief says (AI-generated video \
 banned; an on-screen ad label required), else """""
 
@@ -71,6 +72,7 @@ class Brief(BaseModel):
     people: list[str]
     must_mention: list[str]
     mention_all: str
+    subtitles: str
 
 
 def read_brief(s: Settings, image_path: Path) -> tuple[dict, dict]:
@@ -107,4 +109,4 @@ def _fake() -> dict:
                  rate_per_1k=-1, min_payout_usd=-1, max_payout_usd=-1, bonus_usd=-1,
                  budget_total_usd=-1, budget_remaining_usd=-1, audience_rules="",
                  footage_scope="", ai_video_banned="", onscreen_ad_label="",
-                 people=["Man On"], must_mention=[], mention_all="").model_dump()
+                 people=["Man On"], must_mention=[], mention_all="", subtitles="").model_dump()

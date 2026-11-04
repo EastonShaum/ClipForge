@@ -102,6 +102,7 @@ ADDED_COLUMNS = [("campaigns", "logo_path", "TEXT"), ("posts", "submitted_at", "
                  ("campaigns", "logo_style", "TEXT NOT NULL DEFAULT 'strip'"),
                  ("campaigns", "logo_handle", "TEXT NOT NULL DEFAULT ''"),
                  ("campaigns", "logo_opacity", "REAL NOT NULL DEFAULT 0.6"),
+                 ("bounties", "subtitles", "INTEGER NOT NULL DEFAULT 0"),  # D48
                  ("campaigns", "facecam", "TEXT"),
                  ("posts", "account_id", "INTEGER"),
                  ("posts", "review_status", "TEXT"),

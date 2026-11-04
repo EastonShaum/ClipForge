@@ -33,6 +33,8 @@
 {% if on('pays_on') %}<label>YouTube pays on
   <select name="pays_on">{% for k, l in [('unknown','not stated'),('views','public views'),('engaged_views','engaged views')] %}<option value="{{ k }}" {{ 'selected' if (t.pays_on or 'unknown') == k }}>{{ l }}</option>{% endfor %}</select>
 </label>{% endif %}
+{% if on('subtitles') %}<label class="check"><input type="checkbox" name="subtitles" value="true" {{ 'checked' if t.subtitles }}>
+  Burn in subtitles, under the picture (the brief requires them; otherwise TikTok's auto-captions do)</label>{% endif %}
 {% if on('onscreen_ad_label_required') %}<label class="check"><input type="checkbox" name="onscreen_ad_label_required" value="true" {{ 'checked' if t.onscreen_ad_label_required }}>
   Brief requires an on-screen "Paid partnership #ad" label (burned into its clips)</label>{% endif %}
 {% if on('ai_video_banned') %}<label class="check"><input type="checkbox" name="ai_video_banned" value="true" {{ 'checked' if t.ai_video_banned }}>

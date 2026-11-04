@@ -118,6 +118,67 @@ def probe_size(path: str) -> tuple[int, int]:
         return 0, 0
 
 
+# Burned-in subtitles (D48), for a brief that requires them: the word-by-word captions D31
+# dropped, one line of up to 3 words with the spoken word in yellow, just under the picture
+# (under the hook card when there is one).
+_GLYPH_W = dict(zip("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ',.?!-", (
+    79, 77, 73, 83, 67, 64, 77, 81, 34, 56, 75, 61, 95, 81, 85, 74, 85, 74, 65, 64, 79, 77, 118,
+    74, 69, 68, 68, 40, 60, 60, 70, 61, 65, 63, 67, 65, 29, 24, 28, 28, 60, 30, 39), strict=True))
+SUB_SIZE = 80  # Montserrat ExtraBold advance widths above are per 100 px of font size
+SUB_WORDS = 3
+SUB_GAP = 16  # px under the hook card
+
+
+def text_width(text: str, size: int = SUB_SIZE) -> float:
+    return sum(_GLYPH_W.get(ch, 85) for ch in text.upper()) * size / 100
+
+
+def chunk_words(words: list[dict], n: int = SUB_WORDS, gap_ms: int = 450,
+                max_w: float = HOOK_MAX_W) -> list[list[dict]]:
+    """Group words into subtitle lines: at most n words, split at pauses and punctuation, and
+    never wider than max_w so a line can't wrap."""
+    chunks: list[list[dict]] = []
+    cur: list[dict] = []
+    for w in words:
+        if cur and (len(cur) >= n or w["s"] - cur[-1]["e"] > gap_ms
+                    or text_width(" ".join(x["w"] for x in [*cur, w])) > max_w):
+            chunks.append(cur)
+            cur = []
+        cur.append(w)
+        if w["w"].endswith((".", "?", "!", ",")):
+            chunks.append(cur)
+            cur = []
+    if cur:
+        chunks.append(cur)
+    return chunks
+
+
+def subtitle_events(words: list[dict], start_ms: int, end_ms: int, top: int) -> list[str]:
+    """ASS events for the clip's words (source-time ms), each line's top at y=top."""
+    rel = [{"w": w["w"], "s": w["s"] - start_ms, "e": w["e"] - start_ms}
+           for w in words if w["s"] >= start_ms and w["e"] <= end_ms + 200]
+    dur = end_ms - start_ms
+    chunks = chunk_words(rel)
+    starts = [c[0]["s"] for c in chunks[1:]] + [dur + 1000]
+    out = []
+    for chunk, next_start in zip(chunks, starts, strict=True):
+        # Fixed anchor, no wrapping (\q2); shrink only a single word too wide on its own.
+        fit = min(1.0, HOOK_MAX_W / text_width(" ".join(w["w"] for w in chunk)))
+        pos = rf"{{\an8\pos({HOOK_X},{top})\q2\fscx{fit * 100:.0f}\fscy{fit * 100:.0f}}}"
+        for i, w in enumerate(chunk):
+            s = w["s"]
+            e = chunk[i + 1]["s"] if i + 1 < len(chunk) else w["e"] + 120
+            # Never overlap the next line: two lines at once made captions jump (libass
+            # stacks colliding events).
+            e = min(max(e, s + 60), next_start, dur)
+            if e <= s:
+                continue
+            text = " ".join(rf"{{\c&H00E6FF&}}{_esc(o['w'].upper())}{{\c&HFFFFFF&}}"
+                            if j == i else _esc(o["w"].upper()) for j, o in enumerate(chunk))
+            out.append(f"Dialogue: 0,{_ts(s)},{_ts(e)},Cap,,0,0,0,,{pos}{text}")
+    return out
+
+
 def _ts(ms: int) -> str:
     cs = max(0, ms) // 10
     h, rem = divmod(cs, 360000)
@@ -130,9 +191,9 @@ def _esc(text: str) -> str:
     return text.replace("\\", "").replace("{", "(").replace("}", ")").replace("\n", " ")
 
 
-def build_ass(dur_ms: int, font: str, disclosure: str) -> str:
+def build_ass(dur_ms: int, font: str, disclosure: str, subs: list[str] | None = None) -> str:
     """ASS file with the always-visible disclosure label (FTC wants it in the video, not only
-    the post caption)."""
+    the post caption) and/or subtitle events (subtitle_events)."""
     return "\n".join([
         "[Script Info]", "ScriptType: v4.00+", f"PlayResX: {W}", f"PlayResY: {H}",
         "WrapStyle: 0", "ScaledBorderAndShadow: yes", "",
@@ -143,10 +204,15 @@ def build_ass(dur_ms: int, font: str, disclosure: str) -> str:
         # Disclosure: small, semi-opaque box, top-left inside the safe zone.
         f"Style: Disc,{font},40,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,"
         "3,8,0,7,60,0,200,1",
+        # Subtitles: white, thick black outline (the spoken word turns yellow).
+        f"Style: Cap,{font},{SUB_SIZE},&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,"
+        "100,100,0,0,1,6,2,8,90,150,0,1",
         "",
         "[Events]",
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
-        f"Dialogue: 2,{_ts(0)},{_ts(dur_ms)},Disc,,0,0,0,,{_esc(disclosure)}",
+        *([f"Dialogue: 2,{_ts(0)},{_ts(dur_ms)},Disc,,0,0,0,,{_esc(disclosure)}"]
+          if disclosure else []),
+        *(subs or []),
     ]) + "\n"
 
 
@@ -215,18 +281,27 @@ def _filter_path(p: Path) -> str:
 
 def render(s: Settings, *, media_path: str, start_ms: int, end_ms: int, hook: str,
            out_path: Path, work: Path, layout: str | None = None, disclosure: str = "",
-           logo_paths: list[str] | None = None, watermark: dict | None = None) -> dict:
+           logo_paths: list[str] | None = None, watermark: dict | None = None,
+           words: list[dict] | None = None) -> dict:
+    """words (source-time ms) burns in subtitles under the picture (D48)."""
     work.mkdir(parents=True, exist_ok=True)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    ass = None
-    if disclosure:
-        ass = work / f"disc_{start_ms}_{end_ms}.ass"
-        ass.write_text(build_ass(end_ms - start_ms, s.font_name, disclosure), encoding="utf-8")
     card = work / f"hook_{start_ms}_{end_ms}.png"
-    has_card = make_card(hook, card, s.fonts_dir / "Montserrat-ExtraBold.ttf", HOOK_MAX_W,
-                         s.emoji_font) is not None
+    card_size = make_card(hook, card, s.fonts_dir / "Montserrat-ExtraBold.ttf", HOOK_MAX_W,
+                          s.emoji_font)
+    has_card = card_size is not None
     tmp = out_path.with_suffix(".part.mp4")
     layout = live_layout.choose(layout or s.render_layout, media_path, start_ms, end_ms)
+    src = probe_size(media_path)
+    subs = None
+    if words:
+        top = placement(layout, *src)[1] + (card_size[1] + SUB_GAP if card_size else 0)
+        subs = subtitle_events(words, start_ms, end_ms, top)
+    ass = None
+    if disclosure or subs:
+        ass = work / f"text_{start_ms}_{end_ms}.ass"
+        ass.write_text(build_ass(end_ms - start_ms, s.font_name, disclosure, subs),
+                       encoding="utf-8")
     cmd = [
         ffmpeg(), "-y", "-v", "error",
         "-ss", f"{start_ms / 1000:.3f}", "-t", f"{(end_ms - start_ms) / 1000:.3f}",
@@ -235,7 +310,7 @@ def render(s: Settings, *, media_path: str, start_ms: int, end_ms: int, hook: st
         *(["-i", str(card)] if has_card else []),
         "-filter_complex", filter_graph(layout, ass, s.fonts_dir,
                                         logos=len(logo_paths or []), hook=has_card,
-                                        src=probe_size(media_path), watermark=watermark),
+                                        src=src, watermark=watermark),
         "-map", "[v]", "-map", "0:a:0?",
         "-af", "loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000",
         "-c:v", "libx264", "-preset", s.render_preset, "-crf", str(s.render_crf),

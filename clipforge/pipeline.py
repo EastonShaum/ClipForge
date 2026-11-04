@@ -40,7 +40,8 @@ def _source(conn, sid: int) -> sqlite3.Row:
     return conn.execute(
         "SELECT s.*, c.category, c.name AS campaign_name, c.disclosure, c.logo_path,"
         " c.logo_style, c.logo_handle, c.logo_opacity,"
-        " b.onscreen_ad_label_required, b.layout bounty_layout, b.facecam FROM sources s"
+        " b.onscreen_ad_label_required, b.layout bounty_layout, b.facecam, b.subtitles"
+        " FROM sources s"
         " JOIN campaigns c ON c.id = s.campaign_id LEFT JOIN bounties b ON b.id = s.bounty_id"
         " WHERE s.id = ?", (sid,)
     ).fetchone()
@@ -102,7 +103,11 @@ def build_context(conn: sqlite3.Connection, s: Settings, job: sqlite3.Row) -> di
                 "layout": layout_for(s, src, info, cand["id"]),
                 # D47: logos as a corner watermark with the brand's handle, when the brief asks.
                 "watermark": ({"handle": src["logo_handle"], "opacity": src["logo_opacity"]}
-                              if src["logo_style"] == "watermark" else None)}
+                              if src["logo_style"] == "watermark" else None),
+                # D48: the clip's words, for burned-in subtitles when the bounty wants them.
+                "words": ([w for w in _words(conn, src["id"])
+                           if cand["start_ms"] <= w["s"] and w["e"] <= cand["end_ms"] + 200]
+                          if src["subtitles"] else None)}
     if kind == "scout":
         shot = _shot(conn, job)
         try:
@@ -149,7 +154,7 @@ def run_handler(s: Settings, kind: str, ctx: dict, out_dir: Path | None = None) 
                                                    if ctx.get("onscreen", s.onscreen_disclosure)
                                                    else ""),
                                        logo_paths=_logos(s, ctx.get("logo_rels", [])),
-                                       watermark=ctx.get("watermark"))
+                                       watermark=ctx.get("watermark"), words=ctx.get("words"))
         if kind == "scout":
             bounties, meta = scout_stage.read_screenshot(s, s.assets_dir / ctx["image_rel"])
             return {"shot_id": ctx["shot_id"], "bounties": bounties, "meta": meta}

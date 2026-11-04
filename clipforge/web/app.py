@@ -194,7 +194,7 @@ def terms_from(form) -> dict:
     for k in ("brief_url", "audience_rules", "footage_scope", "brief_text", "people",
               "must_mention"):
         t[k] = (form.get(k) or "").strip()
-    for k in ("onscreen_ad_label_required", "ai_video_banned", "mention_all"):
+    for k in ("onscreen_ad_label_required", "ai_video_banned", "mention_all", "subtitles"):
         t[k] = form.get(k) in ("true", "on", True)
     t["min_clip_s"], t["max_clip_s"] = _num(form.get("min_clip_s")), _num(form.get("max_clip_s"))
     if t["min_clip_s"] and t["max_clip_s"] and t["min_clip_s"] >= t["max_clip_s"]:
@@ -904,7 +904,8 @@ def _routes(app: FastAPI) -> None:  # noqa: C901 - flat list of routes reads bes
             out.append("pays_on")
         if b["must_mention"] and not b["mention_all"]:
             out.append("mention_all")
-        return out + [k for k in ("onscreen_ad_label_required", "ai_video_banned") if not b[k]]
+        return out + [k for k in ("subtitles", "onscreen_ad_label_required",
+                                  "ai_video_banned") if not b[k]]
 
     @app.get("/campaigns/{cid}/bounties/{bid}/setup")
     def bounty_setup(request: Request, cid: int, bid: int, conn: DB, msg: str = ""):

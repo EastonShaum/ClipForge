@@ -67,7 +67,7 @@ def _terms(conn: sqlite3.Connection, bounty_id: int) -> dict:
             out["max_clip_s"] = float(hi)
         for src, dst in (("ai_video_banned", "ai_video_banned"),
                          ("onscreen_ad_label", "onscreen_ad_label_required"),
-                         ("mention_all", "mention_all")):
+                         ("mention_all", "mention_all"), ("subtitles", "subtitles")):
             if (b.get(src) or "").lower() == "yes":
                 out[dst] = True
     return out
@@ -123,7 +123,7 @@ def apply(conn: sqlite3.Connection, bounty_id: int) -> list[str]:
                      ("footage_scope", "footage"), ("people", "people"),
                      ("must_mention", "must name"), ("mention_all", "caption names all of them"),
                      ("min_clip_s", "clips at least (s)"), ("max_clip_s", "clips at most (s)"),
-                     ("ai_video_banned", "AI video banned"),
+                     ("subtitles", "subtitles burned in"), ("ai_video_banned", "AI video banned"),
                      ("onscreen_ad_label_required", "on-screen #ad label")):
         if k not in terms:
             continue

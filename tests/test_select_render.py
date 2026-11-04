@@ -131,3 +131,18 @@ def test_a_bounty_sets_clip_length_and_a_watermark(settings, tmp_path):
                             watermark={"handle": "@rawlawmedia", "opacity": 0.6})
     assert "colorchannelmixer=aa=0.60" in g and "overlay=90:300" in g
     assert "text='@rawlawmedia'" in g and "color=black@0.55" not in g  # no strip
+
+
+def test_subtitles_go_just_under_the_picture(settings):
+    """D48: a bounty with subtitles gets the clip's words burned in, one line at a time."""
+    said = "Three types of luck. Most people know one"
+    words = [{"w": w, "s": 1000 + i * 300, "e": 1250 + i * 300}
+             for i, w in enumerate(said.split(" "))]
+    top = render.placement("blurfill", 1920, 1080)[1]
+    ev = render.subtitle_events(words, 1000, 4000, top)
+    assert all(rf"\an8\pos({render.HOOK_X},{top})" in e for e in ev)
+    lines = {e.split("}", 1)[1].replace("{\\c&H00E6FF&}", "").replace("{\\c&HFFFFFF&}", "")
+             for e in ev}
+    assert lines == {"THREE TYPES OF", "LUCK.", "MOST PEOPLE", "KNOW ONE"}  # never wraps
+    ass = render.build_ass(3000, "Montserrat", "", ev)
+    assert "Style: Cap," in ass and "Disc,,0" not in ass

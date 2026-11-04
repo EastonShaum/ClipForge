@@ -44,6 +44,7 @@ class BountyIn(BaseModel):
     mention_all: bool = False  # D47: the caption must name every one of them
     min_clip_s: float | None = None  # D47: the brief's clip length (None: the default)
     max_clip_s: float | None = None
+    subtitles: bool = False  # D48: burn in subtitles (the brief requires them)
 
 
 def bounty_folder(campaign: sqlite3.Row | dict, bounty_name: str) -> str:

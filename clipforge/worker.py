@@ -33,7 +33,8 @@ ALL_KINDS = ["fetch", "transcribe", "select", "render"]
 # 5: select carries min_s/max_s, render carries layout (D33).
 # 6: layout "auto": camera or shared screen, per clip (D34)
 # 7: render carries "onscreen" (per-bounty #ad label) and new layouts (D38)
-WORKER_PROTOCOL = 8  # 8: render carries "watermark" (logos as a corner watermark, D47)
+# 8: render carries "watermark" (logos as a corner watermark, D47)
+WORKER_PROTOCOL = 9  # 9: render carries "words" for burned-in subtitles (D48)
 LIBRARY_SCAN_S = 60
 _stop = False
 
