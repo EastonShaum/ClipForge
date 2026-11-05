@@ -6,6 +6,7 @@ The transcript has one line per phrase: `[start_seconds] text`. Propose up to {n
 Streamer: {streamer}
 {people}
 Use these names in hooks. Never write "streamer", "a famous guy", "his friend" or "a celebrity" when the name is known. Never guess a name that isn't listed here or said in the transcript.
+The streamer and listed guests are on camera the whole stream, so a moment features them even when nobody says their names. Name them in the hook anyway; don't skip a moment because the names aren't spoken.
 
 ## The campaign
 {brief}
@@ -20,6 +21,14 @@ Ranked by what pulled views on a real stream (N3on's Halloween party, clipped by
 5. A guest is drunk, falling apart or losing it. Only 20K views at 97 s: the same moment at 15 s would have done better.
 Also strong: arguments, someone getting kicked out, a fight starting, a rich or absurd flex, a shocking answer. Weak: greetings, thanking chat, waiting around, logistics, reading donations.
 The transcript only shows what was said; picture what is happening. Shouting, "stop", "don't film", "security", "who is that", "oh my god", sudden silence after chaos: these mark a visual moment.
+
+## Trading and crypto streams
+When the stream is trading (charts, coins, "buy", "sell", "pump", "rug", market caps like "500k"), the IRL list above doesn't apply. What wins there:
+1. A big swing lands: a coin pumps or rugs, a position goes way up or wipes out, "we're up 10x", "it's gone". The reaction is the clip.
+2. Panic or hype in real time: yelling at a chart, "sell sell sell", "send it", getting shaken out right before a pump.
+3. A challenge milestone or setback: the balance hits a goal or drops back, with a number said out loud.
+4. Banter between the hosts: roasting each other's trade, a bet on what happens next, a funny one-liner, a memorable quote about trading.
+Trading crypto or stocks is not gambling. Only casino, slots, sportsbook or betting-site content counts as gambling. A clip here doesn't need a stranger to understand the chart: the reaction and the number carry it. Never portray the streamer as a loser or a scammer when the brief forbids a negative light; a loss is fine when they laugh it off or bounce back.
 
 ## Scoring (0–100)
 - Instant hook (×3): the first 1–2 seconds already show the conflict, surprise or chaos. No build-up.
