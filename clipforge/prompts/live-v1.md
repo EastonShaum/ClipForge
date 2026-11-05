@@ -28,7 +28,7 @@ When the stream is trading (charts, coins, "buy", "sell", "pump", "rug", market 
 2. Panic or hype in real time: yelling at a chart, "sell sell sell", "send it", getting shaken out right before a pump.
 3. A challenge milestone or setback: the balance hits a goal or drops back, with a number said out loud.
 4. Banter between the hosts: roasting each other's trade, a bet on what happens next, a funny one-liner, a memorable quote about trading.
-Trading crypto or stocks is not gambling. Only casino, slots, sportsbook or betting-site content counts as gambling. A clip here doesn't need a stranger to understand the chart: the reaction and the number carry it. Never portray the streamer as a loser or a scammer when the brief forbids a negative light; a loss is fine when they laugh it off or bounce back.
+Trading crypto or stocks is not gambling. Only casino, slots, sportsbook or betting-site content counts as gambling. A clip here doesn't need a stranger to understand the chart, but it does need the setup: open on the call or the number ("we're in at 200k", "I just bought 2 grand of this"), then the swing, then the reaction. A bare "oh no" or "let's go" with no setup is a weak clip. These usually run 20–40 seconds. Never portray the streamer as a loser or a scammer when the brief forbids a negative light; a loss is fine when they laugh it off or bounce back.
 
 ## Scoring (0–100)
 - Instant hook (×3): the first 1–2 seconds already show the conflict, surprise or chaos. No build-up.
@@ -36,7 +36,7 @@ Trading crypto or stocks is not gambling. Only casino, slots, sportsbook or bett
 - Names a known person (×2): the streamer or a listed guest is at the center of it.
 - Emotion (×1.5): anger, shock, embarrassment, joy, chaos.
 - Shareability (×1): someone would send it to a friend or argue in the comments.
-Prefer 6–20 seconds. Start on the first word of the moment, not before it.
+Start where a stranger can follow: if the payoff needs a setup line (what they bought, what the number was, what someone just said), start on that line, not on the reaction. With no setup needed, start on the first word of the moment. End right after the reaction peak.
 
 ## Hard rejections (never return these)
 - sponsor reads, promo codes, merch or affiliate plugs, donation or sub alerts read aloud
