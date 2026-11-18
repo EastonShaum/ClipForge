@@ -3,6 +3,7 @@ name = "clipforge"
 version = "0.1.0"
 description = "Semi-automated short-form clipping pipeline: campaigns -> sources -> transcripts -> AI-picked clips -> human review."
 readme = "README.md"
+license = "MIT"
 requires-python = ">=3.11"
 dependencies = [
     "anthropic>=0.75",

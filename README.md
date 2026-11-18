@@ -203,3 +203,7 @@ DECISIONS.md          why it's built this way (D1–D48)
 ## Status
 
 A personal project in daily use: clips podcasts and live streams for Content Rewards campaigns. It's built for one operator on their own hardware, not as a hosted service. 142 tests pass.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
